@@ -140,6 +140,12 @@ var Player = (function () {
 
     stopAll: function () { this.show([], true); },
 
+    // Economy mode of a software tile (key frames only), chosen by the load
+    // governor in app.js. A restarted session starts live again.
+    setEconomy: function (slot, on) {
+      if (ready && slots[slot] && slots[slot].running) Module._player_set_economy(slot, on ? 1 : 0);
+    },
+
     discover: function (timeoutMs, prefix) {
       if (!ready) return false;
       return Module.ccall('onvif_discover', 'number', ['number', 'string'], [timeoutMs, prefix || '']) === 1;

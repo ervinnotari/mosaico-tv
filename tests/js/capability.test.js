@@ -5,7 +5,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert');
-const { load } = require('./harness');
+const { load, plain } = require('./harness');
 
 // Loads Player + Capability with a fake WASM that accepts the benchmark.
 function setup(opts) {
@@ -48,31 +48,37 @@ test('calibration: 68 Mpx/s on the clip equals ~33.8 of real capacity', () => {
   assert.ok(windows >= 3);
 });
 
-test('75% rule on the reference TV', () => {
-  const ctx = setup();
+test('layouts use the whole measured capacity: The Frame and the Crystal UHD', () => {
+  // Reference TV (68 Mpx/s on the clip = 33.8 of capacity).
+  let ctx = setup();
   measure(ctx, 68);
-  const C = ctx.Capability;
+  let C = ctx.Capability;
   // Typical 352x240 @25 substream = 2.1 Mpx/s per camera.
   assert.ok(C.check(4, cams(4)).ok, '1:4');
   assert.ok(C.check(8, cams(8)).ok, '1:8 (7 in software)');
-  assert.ok(!C.check(16, cams(16)).ok, '1:16 with 16 cameras');
-  assert.ok(C.check(16, cams(4)).ok, '1:16 with only 4 cameras costs like 1:4');
-  assert.ok(C.check(1, cams(16, cam(3840, 2160, 30))).ok, '1:1 sempre');
-  // How far it goes: budget 25.35 Mpx/s; 12 cameras (25.34) fit, 13 do not.
-  assert.ok(C.check(16, cams(12)).ok);
-  assert.ok(!C.check(16, cams(13)).ok);
+  assert.ok(C.check(16, cams(16)).ok, '1:16 with 16 cameras (33.8 of 33.8)');
+  assert.ok(!C.check(16, cams(16, cam(352, 240, 30))).ok, '1:16 at 30 fps does not fit');
+  assert.ok(C.check(1, cams(16, cam(3840, 2160, 30))).ok, '1:1 always');
+
+  // Crystal UHD 2021 (UN50AU7700): ~20.5 Mpx/s on the clip = 10.2 of capacity.
+  ctx = setup();
+  measure(ctx, 20.5);
+  C = ctx.Capability;
+  assert.ok(C.check(4, cams(4)).ok, '1:4 (8.4 of 10.2)');
+  assert.ok(!C.check(8, cams(8)).ok, '1:8 (7 tiles, 14.8) does not fit');
+  assert.ok(C.check(8, cams(4)).ok, '1:8 with only 4 cameras costs like 1:4');
 });
 
 test('the cost uses the real resolution and the heaviest cameras first', () => {
   const ctx = setup();
   measure(ctx, 68);
   const C = ctx.Capability;
-  // A 720p substream weighs ~23 Mpx/s: with 3 more light cameras, 1:4 overflows.
-  const mix = [cam(1280, 720, 25), cam(), cam(), cam()];
+  // A 1080p substream weighs ~52 Mpx/s: it alone overflows the TV.
+  const mix = [cam(1920, 1080, 25), cam(), cam(), cam()];
   assert.ok(!C.check(4, mix).ok);
   // In 1:8 the large tile is native: 7 in software, the heaviest first.
   const r = C.check(8, mix);
-  assert.ok(Math.abs(r.cost - (1280 * 720 * 25 + 3 * 352 * 240 * 25) / 1e6) < 0.01);
+  assert.ok(Math.abs(r.cost - (1920 * 1080 * 25 + 3 * 352 * 240 * 25) / 1e6) < 0.01);
   // fps above 30 counts as 30.
   assert.ok(Math.abs(C.check(4, [cam(352, 240, 60)]).cost - 352 * 240 * 30 / 1e6) < 0.01);
 });
@@ -188,4 +194,86 @@ test('before any profile every layout is allowed; 1:1 always is', () => {
   assert.ok(!ctx.Capability.check(4, cams(4, cam(3840, 2160, 60))).ok);
   // Load without a profile uses the TV cores.
   assert.strictEqual(setup().Capability.load([{ decode_ms: 40, fps: 25 }]), 0.25);
+});
+
+// Software tiles as the stats report them: decode_ms x fps / 1000 = share of a core.
+const tile = (slot, decodeMs, fps, economy) => ({ slot, decode_ms: decodeMs, fps, economy: !!economy });
+
+test('governor: a TV at its limit puts the last non-focused tile in economy mode', () => {
+  const ctx = setup();
+  measure(ctx, 20.5);  // 4 cores
+  const g = ctx.Capability.governor();
+  // 4 tiles at 25 fps x 38 ms = 0.95 of a core each: load 95%.
+  const busy = [0, 1, 2, 3].map((s) => tile(s, 38, 25));
+  let r = g.update(busy, 3);
+  assert.ok(Math.abs(r.load - 0.95) < 1e-9);
+  assert.deepStrictEqual(plain(r.changes), [], 'waits a second cycle');
+  r = g.update(busy, 3);
+  assert.deepStrictEqual(plain(r.changes), [{ slot: 2, economy: true }], 'never the focused tile (3)');
+  // Still above the limit two cycles later: one more tile.
+  const next = busy.map((t) => (t.slot === 2 ? tile(2, 38, 0.5, true) : t));
+  assert.deepStrictEqual(plain(g.update(next, 3).changes), []);
+  assert.deepStrictEqual(plain(g.update(next, 3).changes), [], 'load 71.7%: below the limit');
+});
+
+test('governor: tiles come back live only when their full cost fits', () => {
+  const ctx = setup();
+  measure(ctx, 20.5);
+  const g = ctx.Capability.governor();
+  // Learns the live cost of slot 1 (0.95 of a core), then it goes to economy.
+  g.update([tile(0, 38, 25), tile(1, 38, 25)], -1);
+  const calm = [tile(0, 38, 25), tile(1, 38, 0.5, true)];  // load 24.2%
+  assert.deepStrictEqual(plain(g.update(calm, -1).changes), []);
+  assert.deepStrictEqual(plain(g.update(calm, -1).changes), [{ slot: 1, economy: false }],
+    'third calm cycle (counting the first): 24% + 24% < 75%');
+
+  // Here the economy tile would push the load over 75%: it stays in economy.
+  const g2 = ctx.Capability.governor();
+  g2.update([tile(0, 38, 25), tile(1, 38, 25), tile(2, 38, 25), tile(3, 38, 25)], -1);
+  const near = [tile(0, 38, 25), tile(1, 38, 25), tile(2, 38, 25), tile(3, 38, 0.5, true)];  // 71.7%
+  for (let i = 0; i < 5; i++) assert.deepStrictEqual(plain(g2.update(near, -1).changes), []);
+});
+
+test('governor: the focused tile returns first; reset forgets the history', () => {
+  const ctx = setup();
+  measure(ctx, 68);
+  const g = ctx.Capability.governor();
+  const eco = [tile(0, 10, 0.5, true), tile(1, 10, 0.5, true), tile(2, 10, 25)];
+  for (let i = 0; i < 2; i++) g.update(eco, 1);
+  assert.deepStrictEqual(plain(g.update(eco, 1).changes), [{ slot: 1, economy: false }]);
+  // Without a profile it assumes 4 cores; reset clears the counters.
+  const fresh = setup().Capability.governor();
+  const busy = [0, 1, 2, 3].map((s) => tile(s, 38, 25));
+  fresh.update(busy, -1);
+  fresh.reset();
+  assert.deepStrictEqual(plain(fresh.update(busy, -1).changes), [], 'counting starts again');
+  assert.deepStrictEqual(plain(fresh.update(busy, -1).changes), [{ slot: 3, economy: true }]);
+});
+
+test('governor: a tile that flaps waits twice as long before returning', () => {
+  const ctx = setup();
+  measure(ctx, 20.5);
+  const g = ctx.Capability.governor();
+  const busy = [0, 1, 2, 3].map((s) => tile(s, 38, 25));
+  const calm = [tile(0, 20, 25), tile(1, 20, 25), tile(2, 20, 25), tile(3, 38, 1, true)];  // 38.4%
+  // Returns the number of calm cycles until slot 3 comes back.
+  const cyclesToReturn = () => {
+    for (let i = 1; i <= 100; i++) {
+      if (g.update(calm, -1).changes.some((c) => c.slot === 3 && !c.economy)) return i;
+    }
+    return Infinity;
+  };
+  const overload = () => {
+    g.update(busy, -1);
+    assert.deepStrictEqual(plain(g.update(busy, -1).changes), [{ slot: 3, economy: true }]);
+  };
+  overload();
+  const first = cyclesToReturn();
+  overload();  // back to economy right after returning: flapping
+  const second = cyclesToReturn();
+  overload();
+  const third = cyclesToReturn();
+  assert.ok(first >= 3 && first <= 5, 'first hold ~5 cycles: ' + first);
+  assert.ok(second >= 9 && second <= 10, 'then ~10: ' + second);
+  assert.ok(third >= 19 && third <= 20, 'then ~20: ' + third);
 });

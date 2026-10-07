@@ -53,11 +53,18 @@ against a 4-channel Hikvision DVR.
 - **Performance profile** (`app/js/capability.js`, `wasm/src/bench.cpp`). On
   first launch (and after each firmware update) the app decodes a synthetic
   reference clip (`app/bench/ref_352x240.bin`) on all cores for six 1-second
-  windows and keeps the best one. A layout is enabled only if the software
-  decoding cost of the cameras (real substream resolution × fps) fits in 75%
-  of the measured capacity; otherwise its button is crossed out and explains
-  why. Reference TV: ~66 Mpx/s on the clip, ~33 Mpx/s real capacity, so 1:16
-  allows up to 12 substreams of 352×240 at 25 fps.
+  windows and keeps the best one. A layout is enabled if the software
+  decoding cost of the cameras (real substream resolution × fps) fits in the
+  measured capacity; otherwise its button is crossed out and explains why.
+  Reference TV: ~66 Mpx/s on the clip, ~33 Mpx/s real capacity, so 1:16
+  allows 16 substreams of 352×240 at 25 fps.
+- **Load governor (economy mode).** Every 2 s the app adds up the real
+  decoding load. Above 90% for two cycles, the last tile that is not focused
+  goes to economy mode: only key frames are decoded, so it refreshes once per
+  GOP (1–2 s) at a fraction of the cost, marked by a clock after its name.
+  When the load stays below 75% and the tile's live cost fits, it returns to
+  live; a tile that has to go back soon waits twice as long next time. Full
+  screen always plays live on the TV decoder.
 - **H.265** plays in the native player. In the mosaic (H.264-only software
   decoder) the tile says "H.265 only in full screen" and does not retry. Cameras
   that record in H.265 usually offer an H.264 substream.
@@ -133,7 +140,7 @@ read it from there.
 
 | Level | Runs on | Covers |
 |---|---|---|
-| `tests/js` (66 tests) | Node, no TV | `store.js` (URLs per brand, special characters in passwords, persistence), `capability.js` (calibration, 75% rule, real cost, cache), `player.js` (slot lifecycle, single native player, reconnection, permanent errors, 6 s watchdog, ISAPI), ONVIF (SHA-1, WS-Security, discovery replies and the channel search, with a small XML test parser), Markdown renderer (incl. escaping), i18n (language detection, every language file has the same keys and parameters as `en.json`, every key used by the HTML, JS and WASM error codes exists) |
+| `tests/js` (71 tests) | Node, no TV | `store.js` (URLs per brand, special characters in passwords, persistence), `capability.js` (calibration, capacity rule on both test TVs, real cost, cache, load governor), `player.js` (slot lifecycle, single native player, reconnection, permanent errors, 6 s watchdog, ISAPI), ONVIF (SHA-1, WS-Security, discovery replies and the channel search, with a small XML test parser), Markdown renderer (incl. escaping), i18n (language detection, every language file has the same keys and parameters as `en.json`, every key used by the HTML, JS and WASM error codes exists) |
 | `wasm/tests` | Node (WASM); natively with g++ in CI | MD5, Digest (RFC 2617), SDP, URLs, RTP, SPS (incl. synthetic High profile and H.265 variants) and H.264/H.265 depacketizers |
 | `tools/e2e` | Real TV | H.264 mosaic live, RTSP command order (OPTIONS → DESCRIBE → SETUP → PLAY), H.265 in the mosaic (message, no retry), H.265 full screen, Back, exit dialog, About screen, background and resume, language switch, ONVIF discovery (optional) |
 

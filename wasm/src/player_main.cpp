@@ -61,6 +61,9 @@ void Fail(int slot, const app::Error& err) { app::LogError(slot, "rtsp", err.cod
 struct Slot {
   std::atomic<bool> running{false};
   std::atomic<bool> stop{false};
+  // Economy mode (software decoding): only key frames are decoded, so the
+  // tile refreshes once per GOP at a fraction of the CPU cost.
+  std::atomic<bool> key_frames_only{false};
   std::atomic<app::NativePlayer*> native{nullptr};
 };
 
@@ -101,6 +104,7 @@ struct Stats {
   uint32_t dropped = 0;
   double decode_ms = 0;  // sum over the period
   uint32_t decoded = 0;
+  uint32_t skipped = 0;  // frames not decoded in economy mode
 };
 
 void RunSession(const SessionRequest& req) {
@@ -252,7 +256,20 @@ void RunSession(const SessionRequest& req) {
     }
   };
 
+  bool economy = false;
   auto on_software = [&](media::AccessUnit& au) {
+    // Economy mode: decode only the key frames. Leaving it, the next frames
+    // reference pictures that were skipped, so wait for a key frame.
+    if (state.key_frames_only) {
+      economy = true;
+      if (!au.key_frame) {
+        ++stats.skipped;
+        return;
+      }
+    } else if (economy) {
+      economy = false;
+      waiting_key = true;
+    }
     // If the CPU fell behind, the socket piles up: skip to the next IDR.
     if (conn.available() > kMaxBacklogBytes && !au.key_frame) {
       waiting_key = true;
@@ -353,6 +370,7 @@ void RunSession(const SessionRequest& req) {
                ",\"lost\":" + std::to_string(depack->lost_packets()) +
                ",\"gop_s\":" + std::to_string(gop_s) +
                ",\"codec\":\"" + (is_h265 ? "H265" : "H264") + "\"" +
+               ",\"economy\":" + (state.key_frames_only ? "true" : "false") +
                ",\"mode\":\"" + (req.mode == Mode::kNative ? "native" : "software") + "\"}");
       stats = Stats();
     }
@@ -412,6 +430,7 @@ EMSCRIPTEN_KEEPALIVE int player_start(int slot, const char* url_cstr, int mode) 
     return 0;
   }
   state.stop = false;
+  state.key_frames_only = false;
 
   pthread_t t;
   int rc = pthread_create(&t, nullptr, SessionThread, req);
@@ -436,6 +455,12 @@ EMSCRIPTEN_KEEPALIVE void player_stop(int slot) {
 
 EMSCRIPTEN_KEEPALIVE int player_running(int slot) {
   return slot >= 0 && slot < kMaxSlots && g_slots[slot].running ? 1 : 0;
+}
+
+// Economy mode of a software slot: 1 decodes only key frames, 0 every frame.
+EMSCRIPTEN_KEEPALIVE void player_set_economy(int slot, int on) {
+  if (slot < 0 || slot >= kMaxSlots) return;
+  g_slots[slot].key_frames_only = on != 0;
 }
 
 // Slot rectangle on the 1920x1080 canvas (software mode).
