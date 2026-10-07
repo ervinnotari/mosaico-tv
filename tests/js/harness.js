@@ -99,6 +99,7 @@ function fakeModule(calls) {
     _player_stop: (slot) => calls.push(['player_stop', slot]),
     _player_set_rect: (...a) => calls.push(['player_set_rect'].concat(a)),
     _player_clear_canvas: () => calls.push(['player_clear_canvas']),
+    _player_set_economy: (...a) => calls.push(['player_set_economy'].concat(a)),
     _player_running: () => 0
   };
 }

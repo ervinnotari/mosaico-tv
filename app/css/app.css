@@ -161,6 +161,9 @@ button.primary.focused { background: #5c9dff; }
 
 .tile[data-status="error"] .tile-status { color: var(--error); }
 .tile[data-status="live"] .tile-status { display: none; }
+/* Economy mode (key frames only, see the load governor): a clock after the
+   name says the picture refreshes every second or two. */
+.tile.economy .tile-name::after { content: "  \25F7"; color: var(--muted); }
 
 .empty-tile { background: rgba(255, 255, 255, 0.03); }
 .tile-empty {

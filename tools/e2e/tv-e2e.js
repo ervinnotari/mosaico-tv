@@ -111,7 +111,7 @@ async function launchDebug() {
         const targets = await (await fetch(`http://127.0.0.1:${port}/json`)).json(); // NOSONAR
         if (targets[0]) return devToolsUrl(targets[0].webSocketDebuggerUrl, port);
       } catch (e) { /* still starting */ }
-      await sleep(500);
+      await sleep(500); // NOSONAR: polling, one try at a time
     }
     lastError = 'DevTools did not answer';
   }

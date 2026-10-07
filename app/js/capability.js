@@ -5,8 +5,9 @@
  *
  * On the first run (and after each firmware update) it decodes the
  * reference clip on all cores and measures megapixels per second.
- * A layout is available only if the cost of the cameras decoded in
- * software fits in 75% of the capacity. */
+ * A layout is available if the cost of the cameras decoded in software
+ * fits in the capacity. Near the limit the load governor (Capability.governor)
+ * puts some tiles in economy mode (key frames only) so the TV never chokes. */
 'use strict';
 
 var Capability = (function () {
@@ -21,7 +22,18 @@ var Capability = (function () {
   // ~68 Mpx/s on 4 threads, and 16 real substreams saturate the TV at 33.8 Mpx/s
   // (network, depacketizer, WebGL and UI also cost).
   var LIVE_FACTOR = 33.8 / 68;
-  var BUDGET = 0.75;
+  // A layout may use the whole measured capacity: the governor below keeps
+  // the real load in check when the cameras or the TV vary.
+  var BUDGET = 1.0;
+  // Governor thresholds (share of the decoder capacity, see load()).
+  var HIGH_LOAD = 0.9;   // above: one more tile to economy mode
+  var LOW_LOAD = 0.75;   // a tile returns to live only if it stays below this
+  var HIGH_TICKS = 2;    // stats cycles (2 s each) before reacting
+  var LOW_TICKS = 3;
+  // A tile that goes back to economy soon after returning waits longer each
+  // time (other tiles also decode slower when more are live): no flapping.
+  var HOLD_TICKS = 5;
+  var MAX_HOLD_TICKS = 60;
 
   // Assumed cost of a camera that has not played yet: typical DVR substream.
   var DEFAULT_STREAM = { w: 352, h: 240, fps: 25 };
@@ -111,8 +123,67 @@ var Capability = (function () {
       .slice(0, k).reduce(function (s, c) { return s + c; }, 0);
   }
 
+  function busyShare(s) { return s.decode_ms * s.fps / 1000; }
+
+  // Load governor: called once per stats cycle with the software tiles,
+  // returns the changes [{slot, economy}] to apply. One tile changes at a
+  // time: to economy the last non-focused live tile, back to live the first
+  // economy tile whose full-rate cost fits (estimated from its live stats)
+  // and whose hold time is over.
+  function governor() {
+    var high = 0;
+    var low = 0;
+    var tick = 0;
+    var liveCost = {};   // slot -> share of one core when it was live
+    var hold = {};       // slot -> cycles to wait before returning (doubles)
+    var holdUntil = {};  // slot -> tick when it may return
+    var returnedAt = {}; // slot -> tick when it last returned to live
+    return {
+      reset: function () { high = 0; low = 0; tick = 0; liveCost = {}; hold = {}; holdUntil = {}; returnedAt = {}; },
+      // tiles: [{slot, fps, decode_ms, economy}], focused: slot or -1
+      update: function (tiles, focused) {
+        tick++;
+        var cores = profile ? profile.cores : 4;
+        var load = tiles.reduce(function (s, t) { return s + busyShare(t); }, 0) / cores;
+        tiles.forEach(function (t) { if (!t.economy && t.fps > 0) liveCost[t.slot] = busyShare(t); });
+        high = load > HIGH_LOAD ? high + 1 : 0;
+        low = load < LOW_LOAD ? low + 1 : 0;
+        var live = tiles.filter(function (t) { return !t.economy && t.slot !== focused; });
+        var economy = tiles.filter(function (t) { return t.economy; });
+        if (high >= HIGH_TICKS && live.length) {
+          high = 0;
+          var victim = live.reduce(function (a, b) { return b.slot > a.slot ? b : a; });
+          var s = victim.slot;
+          var flapped = returnedAt[s] !== undefined && tick - returnedAt[s] < MAX_HOLD_TICKS;
+          hold[s] = flapped ? Math.min(MAX_HOLD_TICKS, (hold[s] || HOLD_TICKS) * 2) : HOLD_TICKS;
+          holdUntil[s] = tick + hold[s];
+          return { load: load, changes: [{ slot: s, economy: true }] };
+        }
+        // Tiles still on hold stay in economy (no hold recorded: free to return).
+        economy = economy.filter(function (t) {
+          return holdUntil[t.slot] === undefined || tick >= holdUntil[t.slot];
+        });
+        if (low >= LOW_TICKS && economy.length) {
+          // The focused tile first, then the lowest slot.
+          var sorted = economy.slice().sort(function (a, b) {
+            return (b.slot === focused) - (a.slot === focused) || a.slot - b.slot;
+          });
+          var back = sorted[0];
+          var extra = (liveCost[back.slot] || 0) / cores;
+          if (load + extra < LOW_LOAD) {
+            low = 0;
+            returnedAt[back.slot] = tick;
+            return { load: load, changes: [{ slot: back.slot, economy: false }] };
+          }
+        }
+        return { load: load, changes: [] };
+      }
+    };
+  }
+
   return {
     BUDGET: BUDGET,
+    governor: governor,
 
     ready: function () { return !!profile; },
     profile: function () { return profile; },

@@ -18,7 +18,7 @@
   "common.password": "Senha",
   "layout.unavailable": "Esta TV não tem desempenho para {n} câmeras ao mesmo tempo (precisa de {cost} Mpx/s, suporta {budget}).",
   "layout.fallback": "Layout {from} indisponível nesta TV; usando {to}.",
-  "mosaic.overload": "A TV está no limite com este mosaico. Se o vídeo travar, use um layout menor.",
+  "mosaic.overload": "A TV está no limite com este mosaico: algumas câmeras passam a atualizar mais devagar.",
   "cameras.title": "Câmeras",
   "cameras.search": "Buscar na rede (ONVIF)",
   "cameras.about": "Sobre",

@@ -203,3 +203,14 @@ test('discovery and benchmark events reach their callbacks', () => {
   event(ctx, -1, 'discovery-done', {});
   event(ctx, -1, 'bench', {});
 });
+
+test('economy mode is sent to the WASM only for a running tile', () => {
+  const ctx = setup();
+  ctx.Player.setEconomy(0, true);  // nothing playing yet
+  ctx.Player.show([want('a')], true);
+  ctx.Player.setEconomy(0, true);
+  ctx.Player.setEconomy(0, false);
+  ctx.Player.setEconomy(15, true);  // empty slot
+  assert.deepStrictEqual(ctx.wasmCalls.filter((c) => c[0] === 'player_set_economy').map((c) => c.slice(1)),
+    [[0, 1], [0, 0]]);
+});

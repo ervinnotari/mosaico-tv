@@ -34,7 +34,8 @@ var I18n = (function () {
       STRINGS[code] = JSON.parse(xhr.responseText);
       return true;
     } catch (e) {
-      return false;  // missing or invalid file: the caller falls back to English
+      // Missing or invalid file: not an error, the caller falls back to English.
+      return false;
     }
   }
 

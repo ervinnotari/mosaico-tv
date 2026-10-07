@@ -256,15 +256,20 @@
   };
 
   // Keeps the real substream resolution of each camera (the layout cost
-  // then uses the measured value) and watches the decoder load.
+  // then uses the measured value) and runs the load governor: at the limit,
+  // tiles go to economy mode (key frames only) and come back when it is calm.
   var lastStats = {};
-  var overloadedTicks = 0;
-  var overloadWarned = false;
+  var governor = Capability.governor();
+  var economyWarned = false;
 
   function resetLoadGuard() {
     lastStats = {};
-    overloadedTicks = 0;
-    overloadWarned = false;
+    governor.reset();
+  }
+
+  function focusedSlot() {
+    var f = Nav.current();
+    return f && f.classList.contains('tile') ? +f.dataset.slot : -1;
   }
 
   Player.onStats = function (slot, s) {
@@ -272,24 +277,30 @@
     var tile = document.querySelector('.tile[data-slot="' + slot + '"]');
     var cam = tile && Store.cameras()[+tile.dataset.index];
     if (!cam) return;
+    tile.classList.toggle('economy', !!s.economy);
 
+    // In economy mode the fps is the key frame rate, not the stream's.
     var fps = Math.round(Math.min(30, s.fps));
     var info = cam.subInfo;
-    if (fps >= 5 && (!info || info.w !== s.width || info.h !== s.height || Math.abs(info.fps - fps) > 3)) {
+    if (!s.economy && fps >= 5 && (!info || info.w !== s.width || info.h !== s.height || Math.abs(info.fps - fps) > 3)) {
       Store.update(cam.id, { subInfo: { w: s.width, h: s.height, fps: fps } });
       refreshLayoutButtons();
     }
 
     lastStats[slot] = s;
-    var all = Object.keys(lastStats).map(function (k) { return lastStats[k]; });
     // Evaluate once per stats cycle (when the first software slot reports).
     if (slot !== +Object.keys(lastStats)[0]) return;
-    var load = Capability.load(all);
-    overloadedTicks = load > 0.9 ? overloadedTicks + 1 : 0;
-    if (overloadedTicks >= 3 && !overloadWarned) {
-      overloadWarned = true;
-      toast(I18n.t('mosaic.overload'));
-    }
+    var tiles = Object.keys(lastStats).map(function (k) {
+      var t = lastStats[k];
+      return { slot: +k, fps: t.fps, decode_ms: t.decode_ms, economy: !!t.economy };
+    });
+    governor.update(tiles, focusedSlot()).changes.forEach(function (c) {
+      Player.setEconomy(c.slot, c.economy);
+      if (c.economy && !economyWarned) {
+        economyWarned = true;
+        toast(I18n.t('mosaic.overload'));
+      }
+    });
   };
 
   // ----------------------------------------------------------------- list

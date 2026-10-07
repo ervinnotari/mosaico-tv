@@ -18,7 +18,7 @@
   "common.password": "Password",
   "layout.unavailable": "This TV is not fast enough for {n} cameras at once (needs {cost} Mpx/s, supports {budget}).",
   "layout.fallback": "Layout {from} is not available on this TV; using {to}.",
-  "mosaic.overload": "The TV is at its limit with this mosaic. If the video stutters, use a smaller layout.",
+  "mosaic.overload": "The TV is at its limit with this mosaic: some cameras now refresh more slowly.",
   "cameras.title": "Cameras",
   "cameras.search": "Search the network (ONVIF)",
   "cameras.about": "About",
