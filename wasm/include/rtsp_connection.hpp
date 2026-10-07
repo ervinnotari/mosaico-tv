@@ -5,6 +5,8 @@
 // thread.
 #pragma once
 
+#include <netinet/in.h>
+
 #include <atomic>
 #include <cstdint>
 #include <string>
@@ -49,6 +51,9 @@ class Connection {
   void set_session(const std::string& s) { session_ = s; }
 
  private:
+  static constexpr int kConnectTimeoutMs = 8000;
+  static constexpr int kConnectStepMs = 250;
+  bool ConnectWithTimeout(const sockaddr_in& sa, app::Error* err);
   bool ReadResponse(Response* resp, app::Error* err);
 
   RtspUrl url_;
