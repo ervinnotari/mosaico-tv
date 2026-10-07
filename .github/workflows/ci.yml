@@ -24,8 +24,8 @@ jobs:
     name: JavaScript tests
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
       - run: node --test "tests/js/*.test.js"
@@ -34,28 +34,28 @@ jobs:
     name: C++ tests (native)
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: sh scripts/ci/cpp-tests.sh
 
   wasm-build:
     name: WebAssembly build (Samsung Emscripten)
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           # OpenH264 (wasm/third_party/openh264) is a git submodule.
           submodules: true
 
       # Emscripten 1.39 (2019) needs distutils (removed in Python 3.12) and
       # its clang needs libxml2.
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
       - name: Install libxml2
         run: sudo apt-get update -qq && sudo apt-get install -y -qq libxml2
 
       - name: Cache Samsung Emscripten SDK
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/samsung-emsdk
           key: samsung-emsdk-1.39.4.7-linux64
@@ -65,7 +65,7 @@ jobs:
         run: echo "path=$(sh scripts/ci/setup-emsdk.sh "$HOME/samsung-emsdk")" >> "$GITHUB_OUTPUT"
 
       - name: Cache OpenH264 build
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: build/openh264/libopenh264dec.a
           key: openh264-${{ runner.os }}-${{ hashFiles('.gitmodules', 'wasm/third_party/openh264/codec/api/wels/codec_ver.h', 'scripts/build.sh') }}
@@ -75,7 +75,7 @@ jobs:
         env:
           SAMSUNG_EMSDK: ${{ steps.emsdk.outputs.path }}
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: app-wasm
           path: app/wasm/
