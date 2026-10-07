@@ -3,13 +3,13 @@ rem SPDX-License-Identifier: Apache-2.0
 rem Copyright 2026 Ervin Notari Junior
 chcp 65001 >nul
 rem Signs app\ and builds the .wgt in out\.
-rem Usage: package.bat [profile]   (default: %TIZEN_PROFILE% or "rtsp-poc")
+rem Usage: package.bat [profile]   (default: %TIZEN_PROFILE% or "mosaico-tv")
 setlocal
 call "%~dp0env.bat"
 set "ROOT=%~dp0.."
 set "PROFILE=%~1"
 if "%PROFILE%"=="" set "PROFILE=%TIZEN_PROFILE%"
-if "%PROFILE%"=="" set "PROFILE=rtsp-poc"
+if "%PROFILE%"=="" set "PROFILE=mosaico-tv"
 set "OUT=%ROOT%\out"
 
 if not exist "%ROOT%\app\wasm\player.wasm" (
