@@ -58,7 +58,10 @@ jobs:
       - name: C++ coverage report
         run: |
           pipx install gcovr
+          # Branches that exist only for C++ exceptions (std::string/vector
+          # allocations) or that the compiler marks unreachable are not code paths.
           gcovr --root . --filter 'wasm/src/' --filter 'wasm/include/' \
+            --exclude-throw-branches --exclude-unreachable-branches \
             --sonarqube build/coverage/cpp-sonarqube.xml build/cpp
 
       - name: SonarQube Cloud scan

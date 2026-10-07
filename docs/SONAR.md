@@ -30,13 +30,20 @@ receive secrets) the tests still run and the scan is skipped with a notice.
 | Part | Analysis | Coverage |
 |---|---|---|
 | `app/js`, `app/css`, `app/index.html` | JavaScript, CSS, HTML | `node --test --experimental-test-coverage` (lcov) |
-| Portable C++ (`rtsp_protocol`, `rtsp_url`, `md5`, `video`, `h264`, `h265`) | C++, with the compilation database from Build Wrapper around `scripts/ci/cpp-tests.sh` | `g++ --coverage` + `gcovr` |
+| Portable C++ (`rtsp_protocol`, `rtsp_url`, `md5`, `video`, `h264`, `h265`) | C++, with the compilation database from Build Wrapper around `scripts/ci/cpp-tests.sh` | `g++ --coverage` + `gcovr` (without the branches that exist only for C++ exceptions) |
 | C++ that builds only with the Samsung SDK (`player_main`, `native_player`, `soft_*`, `discovery`, `bench`, `events`, `rtsp_connection`) | not in the compilation database, so skipped by the C++ analyzer | — |
 | `tools/`, `scripts/` | analyzed | excluded |
 
 `app.js`, `nav.js` and the TV-only C++ are excluded from the coverage
 metric on purpose: they are tested end to end on a real TV
 (`tools/e2e`), which cannot run in CI.
+
+## Coverage target
+
+The goal is to keep the overall coverage above 90%. New code must come with
+tests; the Quality Gate requires 80% on the code changed by each pull request.
+The JavaScript tests use test doubles for the browser (`tests/js/harness.js`,
+including a small XML parser for the ONVIF replies in `tests/js/xml.js`).
 
 ## Running the coverage locally
 
@@ -48,5 +55,6 @@ On Linux, the C++ coverage (needs `g++` and `gcovr`):
 
 ```
 CXXFLAGS="--coverage -O0" OUT=build/cpp/unit_tests sh scripts/ci/cpp-tests.sh
-gcovr --root . --filter wasm/src/ --filter wasm/include/ build/cpp
+gcovr --root . --filter wasm/src/ --filter wasm/include/ \
+  --exclude-throw-branches --exclude-unreachable-branches build/cpp
 ```

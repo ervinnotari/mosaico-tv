@@ -133,8 +133,8 @@ read it from there.
 
 | Level | Runs on | Covers |
 |---|---|---|
-| `tests/js` (48 tests) | Node, no TV | `store.js` (URLs per brand, special characters in passwords, persistence), `capability.js` (calibration, 75% rule, real cost, cache), `player.js` (slot lifecycle, single native player, reconnection, permanent errors, 6 s watchdog, ISAPI), ONVIF SHA-1, Markdown renderer (incl. escaping), i18n (language detection, every language file has the same keys and parameters as `en.json`, every key used by the HTML, JS and WASM error codes exists) |
-| `wasm/tests` | Node (WASM); natively with g++ in CI | MD5, Digest (RFC 2617), SDP, SPS and H.264/H.265 depacketizers |
+| `tests/js` (66 tests) | Node, no TV | `store.js` (URLs per brand, special characters in passwords, persistence), `capability.js` (calibration, 75% rule, real cost, cache), `player.js` (slot lifecycle, single native player, reconnection, permanent errors, 6 s watchdog, ISAPI), ONVIF (SHA-1, WS-Security, discovery replies and the channel search, with a small XML test parser), Markdown renderer (incl. escaping), i18n (language detection, every language file has the same keys and parameters as `en.json`, every key used by the HTML, JS and WASM error codes exists) |
+| `wasm/tests` | Node (WASM); natively with g++ in CI | MD5, Digest (RFC 2617), SDP, URLs, RTP, SPS (incl. synthetic High profile and H.265 variants) and H.264/H.265 depacketizers |
 | `tools/e2e` | Real TV | H.264 mosaic live, RTSP command order (OPTIONS → DESCRIBE → SETUP → PLAY), H.265 in the mosaic (message, no retry), H.265 full screen, Back, exit dialog, About screen, background and resume, language switch, ONVIF discovery (optional) |
 
 ```
