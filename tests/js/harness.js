@@ -6,9 +6,10 @@
  * XMLHttpRequest, clock (setTimeout) and the WASM module (Module). */
 'use strict';
 
-const fs = require('fs');
-const path = require('path');
-const vm = require('vm');
+const fs = require('node:fs');
+const path = require('node:path');
+const vm = require('node:vm');
+const { DOMParser } = require('./xml');
 
 const APP_JS = path.join(__dirname, '..', '..', 'app', 'js');
 
@@ -83,6 +84,7 @@ function fakeXhrClass(requests) {
       if (this.onload) this.onload();
     }
     fail() { if (this.onerror) this.onerror(); }
+    expire() { if (this.ontimeout) this.ontimeout(); }
   };
 }
 
@@ -117,8 +119,9 @@ function load(files, opts) {
     setTimeout: clock.setTimeout,
     clearTimeout: clock.clearTimeout,
     Date, JSON, Math, Uint8Array, Uint32Array, ArrayBuffer, Int32Array, Array, Object, String,
-    crypto: require('crypto').webcrypto,
+    crypto: require('node:crypto').webcrypto,
     TextEncoder,
+    DOMParser,
     unescape, encodeURIComponent, decodeURIComponent,
     btoa: (s) => Buffer.from(s, 'binary').toString('base64'),
     clock, requests, wasmCalls

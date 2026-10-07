@@ -5,8 +5,8 @@
 
 const test = require('node:test');
 const assert = require('node:assert');
-const fs = require('fs');
-const path = require('path');
+const fs = require('node:fs');
+const path = require('node:path');
 const { load } = require('./harness');
 
 const ROOT = path.join(__dirname, '..', '..');
@@ -160,4 +160,46 @@ test('apply() fills texts and attributes of the marked elements', () => {
   I18n.apply(root);
   assert.strictEqual(text.textContent, 'Sair');
   assert.strictEqual(placeholder.attrs.placeholder, 'Ex.: Garagem');
+});
+
+test('refresh without tizen, or when reading LOCALE throws, uses the browser language', () => {
+  const ctx = load([], { language: 'pt-BR' });
+  ctx.I18n.setLanguage('en');
+  ctx.I18n.refresh();  // no tizen object
+  assert.strictEqual(ctx.I18n.language(), 'pt');
+  ctx.I18n.setLanguage('en');
+  ctx.tizen = { systeminfo: { getPropertyValue: () => { throw new Error('denied'); } } };
+  ctx.I18n.refresh();
+  assert.strictEqual(ctx.I18n.language(), 'pt');
+  // LOCALE without a language field.
+  ctx.I18n.setLanguage('en');
+  ctx.tizen.systeminfo.getPropertyValue = (prop, ok) => ok({});
+  ctx.I18n.refresh();
+  assert.strictEqual(ctx.I18n.language(), 'pt');
+});
+
+test('with a document, apply() also sets <html lang> and a language change reapplies', () => {
+  const ctx = load([], { language: 'en-US' });
+  const html = { lang: '' };
+  const label = { dataset: { i18n: 'common.back' }, textContent: 'Back' };
+  ctx.document = {
+    documentElement: html,
+    querySelectorAll: (sel) => (sel === '[data-i18n]' ? [label] : [])
+  };
+  ctx.I18n.apply();
+  assert.strictEqual(html.lang, 'en');
+  ctx.I18n.setLanguage('pt-PT');
+  assert.strictEqual(html.lang, 'pt-BR');
+  assert.strictEqual(label.textContent, 'Voltar');
+});
+
+test('an invalid language file falls back to English', () => {
+  const ctx = load([], { language: 'en-US' });
+  ctx.I18n.LANGUAGES.bad = 'bad';
+  // The fake XHR serves files from app/i18n; this one throws while parsing.
+  const XHR = ctx.XMLHttpRequest;
+  ctx.XMLHttpRequest = class extends XHR {
+    send() { this.status = 200; this.responseText = '{not json'; }
+  };
+  assert.strictEqual(ctx.I18n.resolve('bad'), 'en');
 });

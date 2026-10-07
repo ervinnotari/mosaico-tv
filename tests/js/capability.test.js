@@ -116,3 +116,76 @@ test('decoder load: ms per frame x fps / cores', () => {
   const load = ctx.Capability.load([{ decode_ms: 40, fps: 25 }, { decode_ms: 40, fps: 25 }]);
   assert.strictEqual(load, 0.5);  // 2 x 1000 ms/s on 4 cores
 });
+
+test('a firmware update (new build) measures again', () => {
+  const build = (model, version) => ({
+    systeminfo: { getPropertyValue: (prop, ok) => { assert.strictEqual(prop, 'BUILD'); ok({ model, buildVersion: version }); } }
+  });
+  const first = setup();
+  first.tizen = build('QN55LS03A', 'T-KSU2EAKUC-1000');
+  measure(first, 68);
+  assert.match(first.Capability.profile().key, /QN55LS03A\/T-KSU2EAKUC-1000/);
+
+  const same = setup({ localStorage: Object.fromEntries(first.localStorage._data) });
+  same.tizen = build('QN55LS03A', 'T-KSU2EAKUC-1000');
+  let measured = null;
+  same.Capability.ensure(null, (now) => { measured = now; });
+  assert.strictEqual(measured, false, 'same firmware: cached');
+
+  const updated = setup({ localStorage: Object.fromEntries(first.localStorage._data) });
+  updated.tizen = build('QN55LS03A', 'T-KSU2EAKUC-1100');
+  assert.strictEqual(measure(updated, 70), true, 'new firmware: measured again');
+});
+
+test('the build is optional: failure or exception reading it still measures', () => {
+  for (const getPropertyValue of [
+    (prop, ok, fail) => fail(new Error('denied')),
+    () => { throw new Error('not supported'); }
+  ]) {
+    const ctx = setup();
+    ctx.tizen = { systeminfo: { getPropertyValue } };
+    assert.strictEqual(measure(ctx, 68), true);
+  }
+});
+
+test('benchmark problems fall back to the reference TV', () => {
+  // Empty clip, the benchmark does not start, or it reports a failure.
+  const cases = [
+    (ctx) => ctx.requests[0].respond(200, new ArrayBuffer(0)),
+    (ctx) => { ctx.Module._bench_start = () => 0; ctx.requests[0].respond(200, new ArrayBuffer(100)); },
+    (ctx) => { ctx.requests[0].respond(200, new ArrayBuffer(100)); ctx.Player.onBench({ ok: false }); },
+    (ctx) => { ctx.requests[0].respond(200, new ArrayBuffer(100)); ctx.Player.onBench({ ok: true, mpx_per_s: 0 }); }
+  ];
+  for (const fail of cases) {
+    const ctx = setup();
+    let measuring = false;
+    let measured = null;
+    ctx.Capability.ensure(() => { measuring = true; }, (now) => { measured = now; });
+    fail(ctx);
+    assert.ok(measuring);
+    assert.strictEqual(measured, true);
+    assert.ok(ctx.Capability.profile().fallback);
+  }
+});
+
+test('remeasure discards the cached profile', () => {
+  const ctx = setup();
+  measure(ctx, 68);
+  let done = false;
+  ctx.Capability.remeasure(() => { done = true; });
+  assert.ok(!ctx.Capability.ready(), 'profile cleared while measuring');
+  ctx.requests.at(-1).respond(200, new ArrayBuffer(100));
+  ctx.Player.onBench({ ok: true, threads: 4, mpx_per_s: 80, windows: [80] });
+  assert.ok(done);
+  assert.strictEqual(ctx.Capability.profile().benchMpx, 80);
+});
+
+test('before any profile every layout is allowed; 1:1 always is', () => {
+  const ctx = setup();
+  assert.ok(ctx.Capability.check(16, cams(16)).ok);
+  measure(ctx, 10);
+  assert.ok(ctx.Capability.check(1, cams(16, cam(3840, 2160, 60))).ok);
+  assert.ok(!ctx.Capability.check(4, cams(4, cam(3840, 2160, 60))).ok);
+  // Load without a profile uses the TV cores.
+  assert.strictEqual(setup().Capability.load([{ decode_ms: 40, fps: 25 }]), 0.25);
+});

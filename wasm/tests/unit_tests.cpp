@@ -442,6 +442,250 @@ void TestRtpExtension() {
   EXPECT(!media::ParseRtp(p.data(), 14, &pkt));  // extension cut short
 }
 
+
+void TestUrlEdgeCases() {
+  rtsp::RtspUrl u;
+  std::string err;
+  // Upper-case scheme, no path, user without password.
+  EXPECT(rtsp::ParseRtspUrl("RTSP://viewer@cam", &u, &err));
+  EXPECT(u.host == "cam" && u.path == "/" && u.user == "viewer" && u.password.empty());
+  EXPECT(u.has_credentials());
+  EXPECT(u.sanitized() == "rtsp://viewer:***@cam:554/");
+  // IPv6, with and without port.
+  EXPECT(rtsp::ParseRtspUrl("rtsp://[fe80::1]:8554/live?x=1", &u, &err));
+  EXPECT(u.host == "fe80::1" && u.port == 8554 && u.path == "/live?x=1");
+  EXPECT(u.request_url() == "rtsp://[fe80::1]:8554/live?x=1");
+  EXPECT(!u.has_credentials() && u.sanitized() == "rtsp://[fe80::1]:8554/live?x=1");
+  EXPECT(rtsp::ParseRtspUrl("rtsp://[::1]/a", &u, &err) && u.port == 554);
+  // Errors.
+  EXPECT(!rtsp::ParseRtspUrl("rtsp", &u, &err));
+  EXPECT(!rtsp::ParseRtspUrl("rtsp://[fe80::1/a", &u, &err) && err.find(']') != std::string::npos);
+  EXPECT(!rtsp::ParseRtspUrl("rtsp://[::1]x/a", &u, &err) && err == "invalid character after the host");
+  EXPECT(!rtsp::ParseRtspUrl("rtsp://:554/a", &u, &err) && err == "missing host");
+  EXPECT(!rtsp::ParseRtspUrl("rtsp://u:p@/a", &u, &err) && err == "missing host");
+  EXPECT(!rtsp::ParseRtspUrl("rtsp://cam:0/a", &u, &err) && err == "invalid port");
+  EXPECT(!rtsp::ParseRtspUrl("rtsp://cam:12a/a", &u, &err) && err == "invalid port");
+  // Percent-decoding: valid escapes (any case), truncated or invalid ones kept.
+  EXPECT(rtsp::ParseRtspUrl("rtsp://a%2fb:%4A%6b%G1%4@cam/", &u, &err));
+  EXPECT(u.user == "a/b" && u.password == "Jk%G1%4");
+
+  // Passwords removed from any text with URLs; text without them unchanged.
+  EXPECT(rtsp::SanitizeForLog("open rtsp://a:b@h/x and http://c:pa@ss@e:80/y done") ==
+         "open rtsp://a:***@h/x and http://c:***@e:80/y done");
+  EXPECT(rtsp::SanitizeForLog("rtsp://user@host/x rtsp://h:554/x") == "rtsp://user@host/x rtsp://h:554/x");
+  EXPECT(rtsp::SanitizeForLog("\"rtsp://u:p@h\"") == "\"rtsp://u:***@h\"");
+  EXPECT(rtsp::SanitizeForLog("no url here") == "no url here");
+}
+
+void TestResponseEdgeCases() {
+  rtsp::Response r;
+  EXPECT(!rtsp::ParseResponseHead("", &r));
+  EXPECT(!rtsp::ParseResponseHead("HTTP/1.1 200 OK", &r));
+  EXPECT(!rtsp::ParseResponseHead("RTSP/1.0", &r));
+  EXPECT(!rtsp::ParseResponseHead("RTSP/1.0 abc", &r));
+  // Status without reason; a line without ':' is skipped; a blank line ends it.
+  EXPECT(rtsp::ParseResponseHead(
+      "RTSP/1.0 401\r\nWWW-Authenticate: Basic realm=\"a\"\r\ngarbage\r\n"
+      "www-authenticate: Digest realm=\"b\", nonce=\"n\"\r\n\r\nCSeq: 9", &r));
+  EXPECT(r.status == 401 && r.reason.empty());
+  EXPECT(r.Headers("WWW-Authenticate").size() == 2);
+  EXPECT(r.Header("CSeq").empty());
+  EXPECT(r.ContentLength() == 0);
+
+  // Base64 (also URL-safe, spaces and padding ignored) both ways.
+  EXPECT(rtsp::Base64Encode("a") == "YQ==");
+  EXPECT(rtsp::Base64Encode("ab") == "YWI=");
+  EXPECT(rtsp::Base64Encode("abc") == "YWJj");
+  EXPECT(rtsp::Base64Encode("") == "");
+  EXPECT(rtsp::Base64Decode("YW Jj") == std::vector<uint8_t>({'a', 'b', 'c'}));
+  EXPECT(rtsp::Base64Decode("-_8=") == std::vector<uint8_t>({0xfb, 0xff}));
+  EXPECT(rtsp::Base64Decode("+/8=") == std::vector<uint8_t>({0xfb, 0xff}));
+
+  // Digest parameters: unquoted values, unterminated quote, trailing text.
+  rtsp::AuthChallenge c;
+  EXPECT(rtsp::ParseAuthChallenges({"Digest realm=cam,  qop=auth, nonce=\"abc"}, &c));
+  EXPECT(c.realm == "cam" && c.qop == "auth" && c.nonce == "abc");
+  EXPECT(rtsp::ParseAuthChallenges({"Digest realm=\"x\", stale"}, &c) && c.realm == "x");
+  EXPECT(rtsp::BuildAuthorization(rtsp::AuthChallenge(), "Aladdin", "open sesame", "OPTIONS",
+                                  "rtsp://h/", 1, "") == "Basic QWxhZGRpbjpvcGVuIHNlc2FtZQ==");
+
+  EXPECT(rtsp::ResolveControl("rtsp://h/a/", "") == "rtsp://h/a/");
+  EXPECT(rtsp::ResolveControl("rtsp://h/a/", "*") == "rtsp://h/a/");
+  EXPECT(rtsp::ResolveControl("", "track1") == "/track1");
+  std::string id;
+  int timeout = -1;
+  rtsp::ParseSessionHeader(" 12AB ", &id, &timeout);
+  EXPECT(id == "12AB" && timeout == 0);
+  rtsp::ParseSessionHeader("12AB;Timeout=30", &id, &timeout);
+  EXPECT(timeout == 30);
+  rtsp::ParseSessionHeader("12AB;foo", &id, &timeout);
+  EXPECT(timeout == 0);
+
+  // SDP: a second video media is ignored; H.264 with only the SPS.
+  rtsp::SdpVideo v = rtsp::ParseSdpVideo(
+      "m=video 0 RTP/AVP 96\na=rtpmap:96 H264/90000\n"
+      "a=fmtp:96 sprop-parameter-sets=Z0IAHpWoLQSZ\n"
+      "a=rtpmap:97 H265/90000\n"
+      "m=video 0 RTP/AVP 98\na=rtpmap:98 JPEG/90000\n");
+  EXPECT(v.codec == "H264" && !v.sps.empty() && v.pps.empty());
+  v = rtsp::ParseSdpVideo("m=video 0 RTP/AVP 26\na=rtpmap:26 JPEG\n");
+  EXPECT(v.codec == "JPEG" && v.clock_rate == 90000);
+}
+
+void TestVideoEdgeCases() {
+  media::RtpPacket pkt;
+  auto ok = Hex("80 60 0001 00000064 01020304 41");
+  EXPECT(!media::ParseRtp(ok.data(), 11, &pkt));                // too short
+  auto v1 = Hex("40 60 0001 00000064 01020304 41");
+  EXPECT(!media::ParseRtp(v1.data(), v1.size(), &pkt));         // RTP version 1
+  auto csrc = Hex("81 e0 0001 00000064 01020304 0a0b0c0d 41");  // one CSRC, marker
+  EXPECT(media::ParseRtp(csrc.data(), csrc.size(), &pkt));
+  EXPECT(pkt.size == 1 && pkt.payload[0] == 0x41 && pkt.marker);
+  auto empty = Hex("80 60 0001 00000064 01020304");
+  EXPECT(!media::ParseRtp(empty.data(), empty.size(), &pkt));   // no payload
+  auto pad = Hex("a0 60 0001 00000064 01020304 41 05");          // padding > payload
+  EXPECT(!media::ParseRtp(pad.data(), pad.size(), &pkt));
+
+  // Emulation prevention: 00 00 03 xx -> 00 00 xx; a lone 03 stays.
+  auto nal = Hex("00 00 03 01 03 00 00 03");
+  EXPECT(media::ToRbsp(nal.data(), nal.size()) == Hex("00 00 01 03 00 00"));
+
+  // Reading past the end marks an error; Exp-Golomb signed values.
+  media::BitReader r(Hex("a6 42 80"));  // 1 | 010 | 011 | 00100 | 001010 | 0...
+  EXPECT(r.Ue() == 0 && r.Ue() == 1 && r.Se() == -1 && r.Se() == 2 && r.Se() == -2);
+  EXPECT(r.ok());
+  r.Skip(20);
+  EXPECT(!r.ok());
+  EXPECT(r.Bit() == 0);
+  media::BitReader zeros(std::vector<uint8_t>(8, 0));
+  EXPECT(zeros.Ue() == 0);  // more than 31 leading zeros: invalid
+  media::BitReader short_ue(Hex("00"));
+  EXPECT(short_ue.Ue() == 0 && !short_ue.ok());
+}
+
+void TestDepacketizerEdgeCases() {
+  std::vector<media::AccessUnit> aus;
+  h264::Depacketizer d(96, [&](media::AccessUnit& au) { aus.push_back(au); });
+  media::VideoInfo info;
+  EXPECT(!d.Info(&info));  // no SPS yet
+  auto other_pt = Hex("80 61 0001 00000064 01020304 41aa");
+  d.Push(other_pt.data(), other_pt.size());
+  auto garbage = Hex("00 01 02");
+  d.Push(garbage.data(), garbage.size());
+  EXPECT(d.ignored_packets() == 2);
+  // FU-A end without its start (joined mid-frame): ignored; then a key frame
+  // without SPS/PPS known is sent as it is.
+  auto mid = Rtp(1, 100, true, Hex("7c45ccdd"));
+  d.Push(mid.data(), mid.size());
+  auto short_fu = Rtp(2, 200, true, Hex("7c"));
+  d.Push(short_fu.data(), short_fu.size());
+  auto idr = Rtp(3, 300, true, Hex("65aabb"));
+  d.Push(idr.data(), idr.size());
+  EXPECT(aus.size() == 1);
+  if (aus.size() == 1) EXPECT(aus[0].key_frame && aus[0].data == Hex("00000001 65aabb"));
+  // STAP-A with a bad size: stops at the broken NAL; empty NALs are skipped.
+  auto stap = Rtp(4, 400, true, Hex("18 0002 41aa 0009 41"));
+  d.Push(stap.data(), stap.size());
+  EXPECT(aus.size() == 2);
+  // SPS/PPS already in the access unit: nothing is added before the IDR.
+  d.SetParameterSets(Hex("6764"), Hex("68ee"));
+  auto full = Rtp(5, 500, true, Hex("18 0002 6764 0002 68ee 0003 65aabb"));
+  d.Push(full.data(), full.size());
+  EXPECT(aus.size() == 3);
+  if (aus.size() == 3) EXPECT(aus[2].data == Hex("00000001 6764 00000001 68ee 00000001 65aabb"));
+  d.SetParameterSets({}, {});  // empty sets keep the known ones
+
+  std::vector<media::AccessUnit> aus5;
+  h265::Depacketizer d5(96, [&](media::AccessUnit& au) { aus5.push_back(au); });
+  EXPECT(!d5.Info(&info));
+  auto tiny = Rtp(1, 100, true, Hex("02"));  // payload shorter than a NAL header
+  d5.Push(tiny.data(), tiny.size());
+  auto other = Hex("80 61 0001 00000064 01020304 0201aa");
+  d5.Push(other.data(), other.size());
+  auto paci = Rtp(2, 200, true, Hex("6401 aabb"));  // PACI (50): ignored
+  d5.Push(paci.data(), paci.size());
+  auto fu_mid = Rtp(3, 300, true, Hex("6201 53 ccdd"));  // FU end without start
+  d5.Push(fu_mid.data(), fu_mid.size());
+  EXPECT(aus5.empty());
+  // Lost packet in the middle of an FU: the frame is dropped.
+  auto f1 = Rtp(4, 400, false, Hex("6201 93 aa"));
+  auto f3 = Rtp(6, 400, true, Hex("6201 53 cc"));
+  d5.Push(f1.data(), f1.size());
+  d5.Push(f3.data(), f3.size());
+  EXPECT(aus5.empty() && d5.lost_packets() == 1);
+  // AP with a broken size and a 1-byte NAL (too short): only the valid one.
+  auto ap = Rtp(7, 500, true, Hex("6001 0001 02 0003 0201aa 0009 02"));
+  d5.Push(ap.data(), ap.size());
+  EXPECT(aus5.size() == 1);
+  if (aus5.size() == 1) EXPECT(aus5[0].data == Hex("00000001 0201aa"));
+  // A key frame with VPS/SPS/PPS in band: nothing is added.
+  auto vps = Hex("40010c01");
+  auto sps = Hex("42010101");
+  auto pps = Hex("4401c172");
+  d5.SetParameterSets(vps, sps, pps);
+  auto key = Rtp(8, 600, true, Hex("6001 0004 40010c01 0004 42010101 0004 4401c172 0003 2601aa"));
+  d5.Push(key.data(), key.size());
+  EXPECT(aus5.size() == 2);
+  if (aus5.size() == 2) EXPECT(aus5[1].key_frame && aus5[1].data.size() == 4 * 4 + 4 * 3 + 3);
+  d5.SetParameterSets({}, {}, {});
+}
+
+// Interlaced baseline SPS, H.265 4:4:4 and truncated SPS units.
+void TestSpsEdgeCases() {
+  BitWriter w;
+  w.Bits(66, 8);  // Baseline
+  w.Bits(0xc0, 8);
+  w.Bits(30, 8);
+  w.Ue(0);
+  w.Ue(0);   // log2_max_frame_num_minus4
+  w.Ue(2);   // pic_order_cnt_type 2
+  w.Ue(1);
+  w.Bit(0);
+  w.Ue(44);  // 720 wide
+  w.Ue(17);  // 18 map units of 32 lines (field pairs): 576
+  w.Bit(0);  // frame_mbs_only_flag: interlaced
+  w.Bit(0);  // mb_adaptive_frame_field_flag
+  w.Bit(1);
+  w.Bit(0);  // no cropping
+  w.Bit(0);
+  auto sps = w.Nal({0x67});
+  h264::SpsInfo s;
+  EXPECT(h264::ParseSps(sps.data(), sps.size(), &s));
+  EXPECT(s.width == 720 && s.height == 576 && s.profile_idc == 66);
+  // Cut in the middle: invalid.
+  EXPECT(!h264::ParseSps(sps.data(), 6, &s));
+
+  BitWriter w5;
+  w5.Bits(0, 4);
+  w5.Bits(0, 3);      // no sub-layers
+  w5.Bit(1);
+  w5.Bits(0, 2);      // profile space 0
+  w5.Bit(0);          // Main tier
+  w5.Bits(4, 5);      // RExt
+  w5.Bits(0x08000000, 32);
+  for (int i = 0; i < 6; ++i) w5.Bits(0, 8);  // no constraint flags
+  w5.Bits(93, 8);
+  w5.Ue(0);
+  w5.Ue(3);           // chroma 4:4:4
+  w5.Bit(0);          // separate_colour_plane_flag
+  w5.Ue(1280);
+  w5.Ue(720);
+  w5.Bit(1);          // conformance window, 4:4:4 units are 1 sample
+  w5.Ue(0);
+  w5.Ue(0);
+  w5.Ue(0);
+  w5.Ue(0);
+  auto sps5 = w5.Nal({0x42, 0x01});
+  h265::SpsInfo s5;
+  EXPECT(h265::ParseSps(sps5.data(), sps5.size(), &s5));
+  EXPECT(s5.width == 1280 && s5.height == 720);
+  EXPECT(s5.codecs == "hev1.4.10.L93");
+  EXPECT(!h265::ParseSps(sps5.data(), 3, &s5));
+  auto vps = Hex("40010c01ffff");
+  EXPECT(!h265::ParseSps(vps.data(), vps.size(), &s5));
+  EXPECT(!h265::ParseSps(sps5.data(), 8, &s5));  // cut: invalid
+}
+
 }  // namespace
 
 int main() {
@@ -456,6 +700,11 @@ int main() {
   TestSdpAndAuthExtras();
   TestUrlExtras();
   TestRtpExtension();
+  TestUrlEdgeCases();
+  TestResponseEdgeCases();
+  TestVideoEdgeCases();
+  TestDepacketizerEdgeCases();
+  TestSpsEdgeCases();
   std::printf(g_failures ? "%d failure(s)\n" : "all tests passed\n", g_failures);
   return g_failures ? 1 : 0;
 }
