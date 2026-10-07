@@ -67,7 +67,7 @@ var Capability = (function () {
       Player.onBench = function (r) {
         Player.onBench = null;
         Module._free(ptr);
-        if (!r.ok || !(r.mpx_per_s > 0)) { done(false); return; }
+        if (!r.ok || !r.mpx_per_s || r.mpx_per_s <= 0) { done(false); return; }
         profile = {
           key: cacheKey(),
           cores: r.threads,

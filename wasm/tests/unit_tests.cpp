@@ -240,6 +240,208 @@ void TestUrl() {
   EXPECT(u.sanitized().find("s3cret") == std::string::npos);
 }
 
+
+// Builds NAL units bit by bit (Exp-Golomb included), with the RBSP trailing
+// bit and emulation prevention, to exercise the less common SPS fields.
+class BitWriter {
+ public:
+  void Bit(uint32_t b) {
+    if (bits_ % 8 == 0) data_.push_back(0);
+    if (b) data_.back() |= static_cast<uint8_t>(0x80 >> (bits_ % 8));
+    ++bits_;
+  }
+  void Bits(uint32_t v, int n) {
+    for (int i = n - 1; i >= 0; --i) Bit((v >> i) & 1u);
+  }
+  void Ue(uint32_t v) {
+    uint32_t code = v + 1;
+    int len = 0;
+    while ((code >> len) > 1) ++len;
+    Bits(0, len);
+    Bits(code, len + 1);
+  }
+  void Se(int32_t v) { Ue(v > 0 ? static_cast<uint32_t>(2 * v - 1) : static_cast<uint32_t>(-2 * v)); }
+
+  // NAL = header + escaped RBSP with the stop bit.
+  std::vector<uint8_t> Nal(const std::vector<uint8_t>& header) {
+    Bit(1);
+    while (bits_ % 8) Bit(0);
+    std::vector<uint8_t> out = header;
+    int zeros = 0;
+    for (uint8_t b : data_) {
+      if (zeros >= 2 && b <= 3) {
+        out.push_back(3);
+        zeros = 0;
+      }
+      out.push_back(b);
+      zeros = b == 0 ? zeros + 1 : 0;
+    }
+    return out;
+  }
+
+ private:
+  std::vector<uint8_t> data_;
+  int bits_ = 0;
+};
+
+// High profile with scaling matrices and picture order count type 1.
+void TestH264HighProfileSps() {
+  BitWriter w;
+  w.Bits(100, 8);  // profile_idc: High
+  w.Bits(0, 8);    // constraint flags
+  w.Bits(40, 8);   // level 4.0
+  w.Ue(0);         // seq_parameter_set_id
+  w.Ue(1);         // chroma_format_idc 4:2:0
+  w.Ue(0);         // bit_depth_luma_minus8
+  w.Ue(0);         // bit_depth_chroma_minus8
+  w.Bit(0);        // qpprime_y_zero_transform_bypass_flag
+  w.Bit(1);        // seq_scaling_matrix_present_flag
+  for (int i = 0; i < 8; ++i) {
+    bool present = i == 0 || i == 6;  // one 4x4 and one 8x8 list
+    w.Bit(present);
+    if (present) w.Se(-8);  // next_scale becomes 0: the list ends here
+  }
+  w.Ue(0);    // log2_max_frame_num_minus4
+  w.Ue(1);    // pic_order_cnt_type 1
+  w.Bit(0);   // delta_pic_order_always_zero_flag
+  w.Se(0);    // offset_for_non_ref_pic
+  w.Se(0);    // offset_for_top_to_bottom_field
+  w.Ue(2);    // num_ref_frames_in_pic_order_cnt_cycle
+  w.Se(1);
+  w.Se(-1);
+  w.Ue(1);    // max_num_ref_frames
+  w.Bit(0);   // gaps_in_frame_num_value_allowed_flag
+  w.Ue(119);  // pic_width_in_mbs_minus1: 1920
+  w.Ue(67);   // pic_height_in_map_units_minus1: 1088
+  w.Bit(1);   // frame_mbs_only_flag
+  w.Bit(1);   // direct_8x8_inference_flag
+  w.Bit(1);   // frame_cropping_flag
+  w.Ue(0);
+  w.Ue(0);
+  w.Ue(0);
+  w.Ue(4);    // 8 lines cropped at the bottom: 1080
+  w.Bit(0);   // vui_parameters_present_flag
+  std::vector<uint8_t> sps = w.Nal({0x67});
+
+  h264::SpsInfo s;
+  EXPECT(h264::ParseSps(sps.data(), sps.size(), &s));
+  EXPECT(s.width == 1920);
+  EXPECT(s.height == 1080);
+  EXPECT(s.profile_idc == 100);
+
+  h264::Depacketizer d(96, [](h264::AccessUnit&) {});
+  d.SetParameterSets(sps, Hex("68ee"));
+  media::VideoInfo info;
+  EXPECT(d.Info(&info));
+  EXPECT(info.codecs == "avc1.640028");
+  EXPECT(info.width == 1920 && info.height == 1080);
+
+  // Not an SPS, or too short.
+  EXPECT(!h264::ParseSps(sps.data(), 3, &s));
+  auto pps = Hex("68ee3c80");
+  EXPECT(!h264::ParseSps(pps.data(), pps.size(), &s));
+
+  // STAP-B (25) is not supported: the packet is counted and ignored.
+  auto p = Rtp(1, 100, true, Hex("19 0002 0601"));
+  d.Push(p.data(), p.size());
+  EXPECT(d.ignored_packets() == 1);
+}
+
+// Main 10 in profile space 1, high tier, two sub-layers and a conformance
+// window: the less common paths of profile_tier_level and the codec string.
+void TestH265SpsVariants() {
+  for (uint32_t space = 1; space <= 3; ++space) {
+    BitWriter w;
+    w.Bits(0, 4);       // sps_video_parameter_set_id
+    w.Bits(1, 3);       // sps_max_sub_layers_minus1
+    w.Bit(1);           // sps_temporal_id_nesting_flag
+    w.Bits(space, 2);   // general_profile_space
+    w.Bit(1);           // general_tier_flag: High
+    w.Bits(2, 5);       // general_profile_idc: Main 10
+    w.Bits(0x20000000, 32);  // compatibility flag 2
+    w.Bits(0xb0, 8);    // constraint flags
+    for (int i = 0; i < 5; ++i) w.Bits(0, 8);
+    w.Bits(150, 8);     // general_level_idc 5.0
+    w.Bit(1);           // sub_layer_profile_present_flag[0]
+    w.Bit(1);           // sub_layer_level_present_flag[0]
+    for (int i = 1; i < 8; ++i) w.Bits(0, 2);  // reserved_zero_2bits
+    for (int i = 0; i < 11; ++i) w.Bits(0, 8);  // sub-layer profile (88 bits)
+    w.Bits(0, 8);       // sub_layer_level_idc
+    w.Ue(0);            // sps_seq_parameter_set_id
+    w.Ue(1);            // chroma_format_idc 4:2:0
+    w.Ue(3840);         // pic_width_in_luma_samples
+    w.Ue(2176);         // pic_height_in_luma_samples
+    w.Bit(1);           // conformance_window_flag
+    w.Ue(0);
+    w.Ue(0);
+    w.Ue(0);
+    w.Ue(8);            // 16 lines cropped: 2160
+    w.Bits(0, 8);       // the rest of the SPS is not read
+    std::vector<uint8_t> sps = w.Nal({0x42, 0x01});
+
+    h265::SpsInfo s;
+    EXPECT(h265::ParseSps(sps.data(), sps.size(), &s));
+    EXPECT(s.width == 3840);
+    EXPECT(s.height == 2160);
+    const char* letter = space == 1 ? "A" : (space == 2 ? "B" : "C");
+    EXPECT(s.codecs == std::string("hev1.") + letter + "2.4.H150.B0");
+  }
+
+  // A single NAL (TRAIL_R, type 1) in its own packet.
+  std::vector<media::AccessUnit> aus;
+  h265::Depacketizer d(96, [&](media::AccessUnit& au) { aus.push_back(au); });
+  auto p = Rtp(1, 100, true, Hex("0201 aabb"));
+  d.Push(p.data(), p.size());
+  EXPECT(aus.size() == 1);
+  if (aus.size() == 1) EXPECT(aus[0].data == Hex("00000001 0201aabb"));
+}
+
+void TestSdpAndAuthExtras() {
+  rtsp::SdpVideo v = rtsp::ParseSdpVideo(
+      "v=0\r\nm=video 0 RTP/AVP 97\r\na=rtpmap:97 H264/90000\r\na=framerate:25.0\r\n"
+      "a=fmtp:97\r\na=control:rtsp://1.2.3.4/live/track1\r\n");
+  EXPECT(v.payload_type == 97);
+  EXPECT(v.framerate == 25.0);
+  EXPECT(v.sps.empty());
+  EXPECT(v.control == "rtsp://1.2.3.4/live/track1");
+  // No video media at all.
+  EXPECT(!rtsp::ParseSdpVideo("v=0\r\nm=audio 0 RTP/AVP 0\r\n").found);
+
+  rtsp::AuthChallenge c;
+  EXPECT(rtsp::ParseAuthChallenges(
+      {"Basic realm=\"x\"", "Digest realm=\"cam\", nonce=\"n1\", opaque=\"o\", algorithm=MD5"}, &c));
+  EXPECT(c.digest && c.realm == "cam" && c.nonce == "n1" && c.opaque == "o" && c.algorithm == "MD5");
+  std::string h = rtsp::BuildAuthorization(c, "u", "p", "DESCRIBE", "rtsp://h/", 1, "");
+  EXPECT(h.find("opaque=\"o\"") != std::string::npos);
+  EXPECT(h.find("algorithm=MD5") != std::string::npos);
+  EXPECT(h.find("qop=") == std::string::npos);
+  EXPECT(rtsp::ParseAuthChallenges({"Basic realm=\"x\""}, &c) && !c.digest);
+  EXPECT(!rtsp::ParseAuthChallenges({"Negotiate"}, &c));
+}
+
+void TestUrlExtras() {
+  rtsp::RtspUrl u;
+  std::string err;
+  // %XX in the credentials; a '%' that is not an escape stays as it is.
+  EXPECT(rtsp::ParseRtspUrl("rtsp://user:p%40ss%3A1%zz@cam.local/stream", &u, &err));
+  EXPECT(u.user == "user");
+  EXPECT(u.password == "p@ss:1%zz");
+  EXPECT(u.host == "cam.local");
+  EXPECT(u.port == 554);
+  EXPECT(!rtsp::ParseRtspUrl("http://cam/stream", &u, &err));
+  EXPECT(!rtsp::ParseRtspUrl("rtsp://cam:99999/stream", &u, &err));
+}
+
+// RTP with a header extension (one 32-bit word) and padding.
+void TestRtpExtension() {
+  auto p = Hex("90 60 0001 00000064 01020304 bede 0001 aabbccdd 4142 0002");
+  p[0] |= 0x20;  // padding flag: the last byte (2) is the padding length
+  media::RtpPacket pkt;
+  EXPECT(media::ParseRtp(p.data(), p.size(), &pkt));
+  EXPECT(pkt.size == 2 && pkt.payload[0] == 0x41 && pkt.payload[1] == 0x42);
+  EXPECT(!media::ParseRtp(p.data(), 14, &pkt));  // extension cut short
+}
+
 }  // namespace
 
 int main() {
@@ -249,6 +451,11 @@ int main() {
   TestDepacketizer();
   TestH265();
   TestUrl();
+  TestH264HighProfileSps();
+  TestH265SpsVariants();
+  TestSdpAndAuthExtras();
+  TestUrlExtras();
+  TestRtpExtension();
   std::printf(g_failures ? "%d failure(s)\n" : "all tests passed\n", g_failures);
   return g_failures ? 1 : 0;
 }

@@ -3,6 +3,7 @@
 
 #include "h264.hpp"
 
+#include <array>
 #include <cstdio>
 #include <utility>
 
@@ -10,21 +11,66 @@ namespace h264 {
 
 namespace {
 
-const uint8_t kStartCode[4] = {0, 0, 0, 1};
+constexpr std::array<uint8_t, 4> kStartCode = {0, 0, 0, 1};
 
-enum NalType : uint8_t {
-  kNalIdr = 5,
-  kNalSps = 7,
-  kNalPps = 8,
-  kNalStapA = 24,
-  kNalFuA = 28,
-};
+// NAL unit types (H.264 table 7-1, RFC 6184).
+constexpr uint8_t kNalIdr = 5;
+constexpr uint8_t kNalSps = 7;
+constexpr uint8_t kNalPps = 8;
+constexpr uint8_t kNalStapA = 24;
+constexpr uint8_t kNalFuA = 28;
+
+void AppendNal(std::vector<uint8_t>* out, const uint8_t* nal, size_t size) {
+  out->insert(out->end(), kStartCode.begin(), kStartCode.end());
+  out->insert(out->end(), nal, nal + size);
+}
 
 void SkipScalingList(media::BitReader& r, int size) {
-  int last = 8, next = 8;
+  int last = 8;
+  int next = 8;
   for (int j = 0; j < size; ++j) {
     if (next != 0) next = (last + r.Se() + 256) % 256;
     last = next == 0 ? last : next;
+  }
+}
+
+bool IsHighProfile(uint8_t profile_idc) {
+  switch (profile_idc) {
+    case 100: case 110: case 122: case 244: case 44: case 83:
+    case 86: case 118: case 128: case 138: case 139: case 134: case 135:
+      return true;
+    default:
+      return false;
+  }
+}
+
+// High profiles carry the chroma format, bit depths and scaling matrices;
+// returns chroma_format_idc (1, 4:2:0, for the other profiles).
+uint32_t ReadChromaInfo(media::BitReader& r, uint8_t profile_idc) {
+  if (!IsHighProfile(profile_idc)) return 1;
+  uint32_t chroma_format_idc = r.Ue();
+  if (chroma_format_idc == 3) r.Bit();  // separate_colour_plane_flag
+  r.Ue();   // bit_depth_luma_minus8
+  r.Ue();   // bit_depth_chroma_minus8
+  r.Bit();  // qpprime_y_zero_transform_bypass_flag
+  if (!r.Bit()) return chroma_format_idc;  // seq_scaling_matrix_present_flag
+  int count = chroma_format_idc != 3 ? 8 : 12;
+  for (int i = 0; i < count; ++i) {
+    if (r.Bit()) SkipScalingList(r, i < 6 ? 16 : 64);
+  }
+  return chroma_format_idc;
+}
+
+void SkipPicOrderCount(media::BitReader& r) {
+  uint32_t poc_type = r.Ue();
+  if (poc_type == 0) {
+    r.Ue();  // log2_max_pic_order_cnt_lsb_minus4
+  } else if (poc_type == 1) {
+    r.Bit();
+    r.Se();
+    r.Se();
+    uint32_t n = r.Ue();
+    for (uint32_t i = 0; i < n && r.ok(); ++i) r.Se();
   }
 }
 
@@ -38,39 +84,9 @@ bool ParseSps(const uint8_t* nal, size_t size, SpsInfo* out) {
   s.constraint_flags = static_cast<uint8_t>(r.Bits(8));
   s.level_idc = static_cast<uint8_t>(r.Bits(8));
   r.Ue();  // seq_parameter_set_id
-
-  uint32_t chroma_format_idc = 1;
-  switch (s.profile_idc) {
-    case 100: case 110: case 122: case 244: case 44: case 83:
-    case 86: case 118: case 128: case 138: case 139: case 134: case 135: {
-      chroma_format_idc = r.Ue();
-      if (chroma_format_idc == 3) r.Bit();  // separate_colour_plane_flag
-      r.Ue();   // bit_depth_luma_minus8
-      r.Ue();   // bit_depth_chroma_minus8
-      r.Bit();  // qpprime_y_zero_transform_bypass_flag
-      if (r.Bit()) {  // seq_scaling_matrix_present_flag
-        int count = chroma_format_idc != 3 ? 8 : 12;
-        for (int i = 0; i < count; ++i) {
-          if (r.Bit()) SkipScalingList(r, i < 6 ? 16 : 64);
-        }
-      }
-      break;
-    }
-    default:
-      break;
-  }
-
+  uint32_t chroma_format_idc = ReadChromaInfo(r, s.profile_idc);
   r.Ue();  // log2_max_frame_num_minus4
-  uint32_t poc_type = r.Ue();
-  if (poc_type == 0) {
-    r.Ue();  // log2_max_pic_order_cnt_lsb_minus4
-  } else if (poc_type == 1) {
-    r.Bit();
-    r.Se();
-    r.Se();
-    uint32_t n = r.Ue();
-    for (uint32_t i = 0; i < n && r.ok(); ++i) r.Se();
-  }
+  SkipPicOrderCount(r);
   r.Ue();   // max_num_ref_frames
   r.Bit();  // gaps_in_frame_num_value_allowed_flag
   uint32_t width_mbs = r.Ue() + 1;
@@ -79,7 +95,10 @@ bool ParseSps(const uint8_t* nal, size_t size, SpsInfo* out) {
   if (!frame_mbs_only) r.Bit();  // mb_adaptive_frame_field_flag
   r.Bit();                       // direct_8x8_inference_flag
 
-  uint32_t crop_l = 0, crop_r = 0, crop_t = 0, crop_b = 0;
+  uint32_t crop_l = 0;
+  uint32_t crop_r = 0;
+  uint32_t crop_t = 0;
+  uint32_t crop_b = 0;
   if (r.Bit()) {
     crop_l = r.Ue();
     crop_r = r.Ue();
@@ -113,13 +132,13 @@ void Depacketizer::SetParameterSets(const std::vector<uint8_t>& sps,
 bool Depacketizer::Info(media::VideoInfo* out) const {
   SpsInfo s;
   if (sps_.empty() || !ParseSps(sps_.data(), sps_.size(), &s)) return false;
-  char codecs[16];
-  std::snprintf(codecs, sizeof(codecs), "avc1.%02x%02x%02x", s.profile_idc,
+  std::array<char, 16> codecs;
+  std::snprintf(codecs.data(), codecs.size(), "avc1.%02x%02x%02x", s.profile_idc,
                 s.constraint_flags, s.level_idc);
   out->codec = media::Codec::kH264;
   out->width = s.width;
   out->height = s.height;
-  out->codecs = codecs;
+  out->codecs = codecs.data();
   return true;
 }
 
@@ -148,34 +167,44 @@ void Depacketizer::Push(const uint8_t* p, size_t size) {
   if (type >= 1 && type <= 23) {
     AddNal(payload, len);
   } else if (type == kNalStapA) {
-    size_t i = 1;
-    while (i + 2 <= len) {
-      size_t n = static_cast<size_t>(payload[i] << 8 | payload[i + 1]);
-      i += 2;
-      if (n == 0 || i + n > len) break;
-      AddNal(payload + i, n);
-      i += n;
-    }
+    AddAggregate(payload, len);
   } else if (type == kNalFuA && len >= 2) {
-    bool start = payload[1] & 0x80;
-    bool stop = payload[1] & 0x40;
-    if (start) {
-      fu_.clear();
-      fu_.push_back(static_cast<uint8_t>((payload[0] & 0xe0) | (payload[1] & 0x1f)));
-      fu_active_ = true;
-    }
-    if (fu_active_) {
-      fu_.insert(fu_.end(), payload + 2, payload + len);
-      if (stop) {
-        AddNal(fu_.data(), fu_.size());
-        fu_active_ = false;
-      }
-    }
+    AddFragment(payload, len);
   } else {
     ++ignored_packets_;  // STAP-B, MTAP, FU-B: rare in cameras
   }
 
   if (pkt.marker) Flush();
+}
+
+// STAP-A: several NALs, each preceded by a 16-bit size.
+void Depacketizer::AddAggregate(const uint8_t* payload, size_t len) {
+  size_t i = 1;
+  while (i + 2 <= len) {
+    auto n = static_cast<size_t>(payload[i] << 8 | payload[i + 1]);
+    i += 2;
+    if (n == 0 || i + n > len) break;
+    AddNal(payload + i, n);
+    i += n;
+  }
+}
+
+// FU-A: one NAL split across packets; the header is rebuilt from the FU
+// indicator (NRI) and the FU header (type).
+void Depacketizer::AddFragment(const uint8_t* payload, size_t len) {
+  bool start = payload[1] & 0x80;
+  bool stop = payload[1] & 0x40;
+  if (start) {
+    fu_.clear();
+    fu_.push_back(static_cast<uint8_t>((payload[0] & 0xe0) | (payload[1] & 0x1f)));
+    fu_active_ = true;
+  }
+  if (!fu_active_) return;
+  fu_.insert(fu_.end(), payload + 2, payload + len);
+  if (stop) {
+    AddNal(fu_.data(), fu_.size());
+    fu_active_ = false;
+  }
 }
 
 void Depacketizer::AddNal(const uint8_t* nal, size_t size) {
@@ -190,8 +219,7 @@ void Depacketizer::AddNal(const uint8_t* nal, size_t size) {
   } else if (type == kNalIdr) {
     au_.key_frame = true;
   }
-  au_.data.insert(au_.data.end(), kStartCode, kStartCode + 4);
-  au_.data.insert(au_.data.end(), nal, nal + size);
+  AppendNal(&au_.data, nal, size);
 }
 
 void Depacketizer::Flush() {
@@ -203,14 +231,8 @@ void Depacketizer::Flush() {
   if (au_.key_frame && (!au_has_sps_ || !au_has_pps_) && !sps_.empty() &&
       !pps_.empty()) {
     std::vector<uint8_t> prefix;
-    if (!au_has_sps_) {
-      prefix.insert(prefix.end(), kStartCode, kStartCode + 4);
-      prefix.insert(prefix.end(), sps_.begin(), sps_.end());
-    }
-    if (!au_has_pps_) {
-      prefix.insert(prefix.end(), kStartCode, kStartCode + 4);
-      prefix.insert(prefix.end(), pps_.begin(), pps_.end());
-    }
+    if (!au_has_sps_) AppendNal(&prefix, sps_.data(), sps_.size());
+    if (!au_has_pps_) AppendNal(&prefix, pps_.data(), pps_.size());
     au_.data.insert(au_.data.begin(), prefix.begin(), prefix.end());
   }
   on_access_unit_(au_);

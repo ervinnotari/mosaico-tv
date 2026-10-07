@@ -112,9 +112,52 @@ test('every key used in the app exists', () => {
   assert.deepStrictEqual(missing, []);
 });
 
-test('no fixed text left in the HTML', () => {
-  const html = read('app/index.html').replace(/<!--[\s\S]*?-->/g, '');
+// The HTML carries the English text (fallback and accessibility); every
+// text must come from en.json through data-i18n, so translations cover it.
+test('HTML texts are the en.json defaults of their data-i18n keys', () => {
+  const en = dictionaries().en;
+  const unescape = (s) => s.split('&quot;').join('"').split('&lt;').join('<')
+    .split('&gt;').join('>').split('&amp;').join('&');
+  // Removes comments until none is left (a removal could join a new "<!--").
+  let html = read('app/index.html');
+  for (let prev = ''; prev !== html;) {
+    prev = html;
+    html = html.replace(/<!--[\s\S]*?-->/g, '');
+  }
+  const keyed = [...html.matchAll(/<(\w+)\b[^>]*\bdata-i18n="([^"]+)"[^>]*>([^<]*)<\/\1>/g)];
+  assert.ok(keyed.length > 40, 'found the texts: ' + keyed.length);
+  for (const [, , key, text] of keyed) assert.strictEqual(unescape(text), en[key], key);
+  for (const [, text, key] of html.matchAll(/placeholder="([^"]*)" data-i18n-placeholder="([^"]+)"/g)) {
+    assert.strictEqual(unescape(text), en[key], key);
+  }
+  const keyedTexts = new Set(keyed.map((m) => m[3].trim()));
   const texts = [...html.matchAll(/>([^<>]+)</g)].map((m) => m[1].trim()).filter(Boolean);
-  const fixed = texts.filter((t) => /[A-Za-zÀ-ú]{2,}/.test(t) && t !== 'Mosaico');
+  const fixed = texts.filter((s) => /[A-Za-zÀ-ú]{2,}/.test(s) && s !== 'Mosaico' && !keyedTexts.has(s));
   assert.deepStrictEqual(fixed, []);
+});
+
+test('a language without its file falls back to English', () => {
+  const { I18n } = load([], { language: 'en-US' });
+  I18n.LANGUAGES.zz = 'zz';  // listed, but there is no i18n/zz.json
+  assert.strictEqual(I18n.resolve('zz-ZZ'), 'en');
+  assert.strictEqual(I18n.setLanguage('zz'), false);
+  assert.strictEqual(I18n.language(), 'en');
+});
+
+test('apply() fills texts and attributes of the marked elements', () => {
+  const { I18n } = load([], { language: 'pt-BR' });
+  const el = (data) => ({ dataset: data, attrs: {}, setAttribute(k, v) { this.attrs[k] = v; },
+    getAttribute(k) { return k.startsWith('data-i18n-') ? data.attr : null; } });
+  const text = el({ i18n: 'exit.confirm' });
+  const placeholder = el({ attr: 'form.name_ph' });
+  const root = {
+    querySelectorAll(sel) {
+      if (sel === '[data-i18n]') return [text];
+      if (sel === '[data-i18n-placeholder]') return [placeholder];
+      return [];
+    }
+  };
+  I18n.apply(root);
+  assert.strictEqual(text.textContent, 'Sair');
+  assert.strictEqual(placeholder.attrs.placeholder, 'Ex.: Garagem');
 });

@@ -34,7 +34,7 @@ var I18n = (function () {
       STRINGS[code] = JSON.parse(xhr.responseText);
       return true;
     } catch (e) {
-      return false;
+      return false;  // missing or invalid file: the caller falls back to English
     }
   }
 
@@ -89,12 +89,13 @@ var I18n = (function () {
 
   // Applies the texts to the HTML (data-i18n*).
   function apply(root) {
-    root = root || document;
-    if (root === document && document.documentElement) {
-      document.documentElement.lang = LANGUAGES[lang];
+    var doc = typeof document === 'undefined' ? null : document;
+    root = root || doc;
+    if (root === doc && doc.documentElement) {
+      doc.documentElement.lang = LANGUAGES[lang];
     }
     Array.prototype.forEach.call(root.querySelectorAll('[data-i18n]'), function (e) {
-      e.textContent = t(e.getAttribute('data-i18n'));
+      e.textContent = t(e.dataset.i18n);
     });
     ATTRS.forEach(function (attr) {
       Array.prototype.forEach.call(root.querySelectorAll('[data-i18n-' + attr + ']'), function (e) {

@@ -15,9 +15,10 @@
  */
 'use strict';
 
-const fs = require('fs');
-const net = require('net');
-const os = require('os');
+const crypto = require('node:crypto');
+const fs = require('node:fs');
+const net = require('node:net');
+const os = require('node:os');
 
 const [file, portArg, fpsArg] = process.argv.slice(2);
 if (!file) {
@@ -54,7 +55,7 @@ for (const nal of splitNals(fs.readFileSync(file))) {
   if (!frames.length) frames.push([]);
   const name = H265 ? { 32: 'vps', 33: 'sps', 34: 'pps' }[t] : { 7: 'sps', 8: 'pps' }[t];
   if (name && !params[name]) params[name] = nal;
-  frames[frames.length - 1].push(nal);
+  frames.at(-1).push(nal);
 }
 const playable = frames.filter((f) => f.length);
 if (!playable.length || !params.sps) {
@@ -93,8 +94,9 @@ function rtpPayloads(nal) {
 }
 
 function play(client) {
-  let index = 0, seq = Math.floor(Math.random() * 65536), ts = Math.floor(Math.random() * 2 ** 31);
-  const ssrc = Math.floor(Math.random() * 2 ** 32);
+  // RFC 3550: random initial sequence number, timestamp and SSRC.
+  let index = 0, seq = crypto.randomInt(65536), ts = crypto.randomInt(2 ** 31);
+  const ssrc = crypto.randomBytes(4).readUInt32BE(0);
   client.timer = setInterval(() => {
     const payloads = playable[index].flatMap(rtpPayloads);
     payloads.forEach((p, i) => {
@@ -114,7 +116,40 @@ function play(client) {
   }, 1000 / FPS);
 }
 
+// Request text from the network: control characters (CR/LF) removed
+// before logging, so a client cannot forge log lines.
+const printable = (s) => String(s).replace(/[\x00-\x1f\x7f]/g, '?');
+
 // ---- RTSP ----
+// One RTSP request (without the final blank line): answers it and starts or
+// stops the stream.
+function handleRequest(socket, client, peer, req) {
+  const [line, ...headers] = req.split('\r\n');
+  const [method, url] = line.split(' ');
+  const header = (n) => (headers.find((h) => h.toLowerCase().startsWith(n.toLowerCase() + ':')) || '').split(':').slice(1).join(':').trim();
+  const reply = (extra, body) => socket.write(
+    `RTSP/1.0 200 OK\r\nCSeq: ${header('CSeq')}\r\n${extra || ''}` +
+    (body ? `Content-Length: ${Buffer.byteLength(body)}\r\n\r\n${body}` : '\r\n'));
+  console.log(`[${peer}] ${printable(method)} ${printable(url)}`);
+  if (method === 'DESCRIBE') {
+    const base = url.endsWith('/') ? url : url + '/';
+    reply(`Content-Base: ${base}\r\nContent-Type: application/sdp\r\n`, sdp(socket.localAddress));
+  } else if (method === 'SETUP') {
+    const m = /interleaved=(\d+)/.exec(header('Transport'));
+    client.channel = m ? Number(m[1]) : 0;
+    reply(`Transport: RTP/AVP/TCP;unicast;interleaved=${client.channel}-${client.channel + 1}\r\nSession: 12345678;timeout=60\r\n`);
+  } else if (method === 'PLAY') {
+    reply('Session: 12345678\r\nRange: npt=0.000-\r\n');
+    if (!client.timer) play(client);
+  } else if (method === 'TEARDOWN') {
+    reply('Session: 12345678\r\n');
+    clearInterval(client.timer);
+    client.timer = null;
+  } else {
+    reply('Public: OPTIONS, DESCRIBE, SETUP, PLAY, TEARDOWN, GET_PARAMETER\r\n');
+  }
+}
+
 net.createServer((socket) => {
   const client = { socket, channel: 0, timer: null };
   const peer = socket.remoteAddress;
@@ -126,30 +161,7 @@ net.createServer((socket) => {
     while ((end = buf.indexOf('\r\n\r\n')) >= 0) {
       const req = buf.slice(0, end);
       buf = buf.slice(end + 4);
-      const [line, ...headers] = req.split('\r\n');
-      const [method, url] = line.split(' ');
-      const header = (n) => (headers.find((h) => h.toLowerCase().startsWith(n.toLowerCase() + ':')) || '').split(':').slice(1).join(':').trim();
-      const reply = (extra, body) => socket.write(
-        `RTSP/1.0 200 OK\r\nCSeq: ${header('CSeq')}\r\n${extra || ''}` +
-        (body ? `Content-Length: ${Buffer.byteLength(body)}\r\n\r\n${body}` : '\r\n'));
-      console.log(`[${peer}] ${method} ${url}`);
-      if (method === 'DESCRIBE') {
-        const base = url.endsWith('/') ? url : url + '/';
-        reply(`Content-Base: ${base}\r\nContent-Type: application/sdp\r\n`, sdp(socket.localAddress));
-      } else if (method === 'SETUP') {
-        const m = header('Transport').match(/interleaved=(\d+)/);
-        client.channel = m ? Number(m[1]) : 0;
-        reply(`Transport: RTP/AVP/TCP;unicast;interleaved=${client.channel}-${client.channel + 1}\r\nSession: 12345678;timeout=60\r\n`);
-      } else if (method === 'PLAY') {
-        reply('Session: 12345678\r\nRange: npt=0.000-\r\n');
-        if (!client.timer) play(client);
-      } else if (method === 'TEARDOWN') {
-        reply('Session: 12345678\r\n');
-        clearInterval(client.timer);
-        client.timer = null;
-      } else {
-        reply('Public: OPTIONS, DESCRIBE, SETUP, PLAY, TEARDOWN, GET_PARAMETER\r\n');
-      }
+      handleRequest(socket, client, peer, req);
     }
   });
   const done = () => { clearInterval(client.timer); console.log(`[${peer}] closed`); };

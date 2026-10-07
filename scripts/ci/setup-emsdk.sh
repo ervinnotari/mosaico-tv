@@ -17,7 +17,7 @@ EMSDK="$DEST/emscripten-release-bundle/emsdk"
 if [ ! -x "$EMSDK/emsdk" ]; then
   mkdir -p "$DEST"
   echo "[setup-emsdk] downloading emscripten-1.39.4.7-linux64.zip" >&2
-  curl -fsSL -A "Mozilla/5.0" -o "$DEST/emsdk.zip" "$URL"
+  curl -fsSL --proto "=https" --proto-redir "=https" -A "Mozilla/5.0" -o "$DEST/emsdk.zip" "$URL"
   unzip -q -o "$DEST/emsdk.zip" -d "$DEST"
   rm -f "$DEST/emsdk.zip"
 fi

@@ -31,17 +31,21 @@ int HexValue(char c) {
 std::string PercentDecode(const std::string& in) {
   std::string out;
   out.reserve(in.size());
-  for (size_t i = 0; i < in.size(); ++i) {
+  size_t i = 0;
+  while (i < in.size()) {
+    int hi = -1;
+    int lo = -1;
     if (in[i] == '%' && i + 2 < in.size()) {
-      int hi = HexValue(in[i + 1]);
-      int lo = HexValue(in[i + 2]);
-      if (hi >= 0 && lo >= 0) {
-        out.push_back(static_cast<char>(hi * 16 + lo));
-        i += 2;
-        continue;
-      }
+      hi = HexValue(in[i + 1]);
+      lo = HexValue(in[i + 2]);
     }
-    out.push_back(in[i]);
+    if (hi >= 0 && lo >= 0) {
+      out.push_back(static_cast<char>(hi * 16 + lo));
+      i += 3;
+    } else {
+      out.push_back(in[i]);
+      i += 1;
+    }
   }
   return out;
 }

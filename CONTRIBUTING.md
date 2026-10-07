@@ -87,9 +87,15 @@ maintainer will run it.
 
 ## Code guidelines
 
-- **Match the surrounding code.** JavaScript is ES5 (`var`, no build step)
-  because it runs on the Tizen 6.0 browser; C++ is C++14 for the Samsung
+- **Match the surrounding code.** The app JavaScript (`app/js`) runs with
+  no build step on the Tizen 6.0 browser (Chromium 76): `var` and functions,
+  and nothing newer than that browser — no optional chaining (`?.`), `??`,
+  `replaceAll` or `.at()` (those Sonar rules are disabled for `app/js`).
+  Tools and tests run on Node 22. C++ is C++14 for the Samsung
   Emscripten 1.39 toolchain.
+- Keep the code clean for SonarQube Cloud and CodeQL. When a rule does not
+  apply, explain why in a comment next to a `// NOSONAR`, as in
+  `app/js/onvif.js` (32-bit arithmetic in SHA-1).
 - New source files start with the SPDX and copyright header used by the
   other files.
 - **User-facing text goes through i18n.** Add every new text to both the

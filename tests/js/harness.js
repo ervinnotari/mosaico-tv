@@ -116,7 +116,9 @@ function load(files, opts) {
     XMLHttpRequest: fakeXhrClass(requests),
     setTimeout: clock.setTimeout,
     clearTimeout: clock.clearTimeout,
-    Date, JSON, Math, Uint8Array, ArrayBuffer, Int32Array, Array, Object, String,
+    Date, JSON, Math, Uint8Array, Uint32Array, ArrayBuffer, Int32Array, Array, Object, String,
+    crypto: require('crypto').webcrypto,
+    TextEncoder,
     unescape, encodeURIComponent, decodeURIComponent,
     btoa: (s) => Buffer.from(s, 'binary').toString('base64'),
     clock, requests, wasmCalls

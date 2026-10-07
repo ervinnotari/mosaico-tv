@@ -23,10 +23,14 @@ var Player = (function () {
   // Hikvision DVRs/cameras send a key frame right away when asked
   // (ISAPI). Without it, full screen waits for the next one, which can take seconds.
   function requestKeyFrame(url) {
-    var m = String(url).match(/^rtsp:\/\/(?:([^:@\/]*)(?::([^@\/]*))?@)?([^:\/]+)(?::\d+)?\/Streaming\/(?:Unicast\/)?channels\/(\d+)/i);
+    var m = /^rtsp:\/\/(?:([^:@/]*)(?::([^@/]*))?@)?([^:/]+)(?::\d+)?\/Streaming\/(?:Unicast\/)?channels\/(\d+)/i.exec(String(url));
     if (!m) return;
     var xhr = new XMLHttpRequest();
-    xhr.open('PUT', 'http://' + m[3] + '/ISAPI/Streaming/channels/' + m[4] + '/requestKeyFrame', true,
+    // Plain HTTP on purpose: the DVR is on the local network and speaks only
+    // HTTP (or HTTPS with a self-signed certificate the TV rejects), like the
+    // RTSP stream itself. A failure only delays the first frame.
+    xhr.open('PUT', 'http://' + m[3] + '/ISAPI/Streaming/channels/' + m[4] + '/requestKeyFrame', true, // NOSONAR
+
       decodeURIComponent(m[1] || ''), decodeURIComponent(m[2] || ''));
     xhr.timeout = 3000;
     xhr.onload = function () { console.log('[keyframe] ' + m[4] + ' HTTP ' + xhr.status); };
@@ -147,6 +151,48 @@ var Player = (function () {
     onStats: null           // (slot, {width, height, fps, decode_ms, mode, ...})
   };
 
+  // ---- events from the WASM: Module.onEvent(slot, kind, json) ----
+
+  function isActive(slot) {
+    return slot >= 0 && slots[slot].running && !slots[slot].stopping;
+  }
+
+  var EVENTS = {
+    'discovery-match': function (slot, data) {
+      if (Player.onDiscovery) Player.onDiscovery(data.from, data.xml);
+    },
+    'discovery-done': function () {
+      if (Player.onDiscoveryDone) Player.onDiscoveryDone();
+    },
+    bench: function (slot, data) {
+      if (Player.onBench) Player.onBench(data);
+    },
+    stats: function (slot, data, kind, json) {
+      console.log('[stats ' + slot + '] ' + json);
+      if (!isActive(slot)) return;
+      var live = data.fps > 0;
+      setStatus(slot, live ? 'live' : 'connecting', live ? '' : I18n.t('player.waiting'));
+      if (Player.onStats) Player.onStats(slot, data);
+    },
+    play: function (slot, data) {
+      if (data.mode === 'native' && slots[slot].want) {
+        requestKeyFrame(slots[slot].want.url);
+        watchFirstFrame(slot);
+      }
+    },
+    'first-frame': function (slot, data) {
+      console.log('[first-frame ' + slot + '] ' + data.ms + ' ms after PLAY');
+      clearTimeout(slots[slot].firstFrameTimer);
+    }
+  };
+
+  // Logs and errors ("rtsp", "player", "fatal"...): an error shows on the tile.
+  function onLogEvent(slot, data, kind) {
+    if (kind === 'fatal' && slot >= 0) slots[slot].fatalKey = slots[slot].key;
+    console.log('[' + kind + ' ' + slot + '] ' + (data.code ? data.code + ': ' : '') + data.text);
+    if (!data.ok && slot >= 0 && !slots[slot].stopping) setStatus(slot, 'error', errorText(kind, data));
+  }
+
   // ---- callbacks called by the WASM ----
   window.Module = {
     print: function (t) { console.log('[wasm] ' + t); },
@@ -158,42 +204,8 @@ var Player = (function () {
     },
     onEvent: function (slot, kind, json) {
       var data;
-      try { data = JSON.parse(json); } catch (e) { return; }
-      if (kind === 'discovery-match') {
-        if (Player.onDiscovery) Player.onDiscovery(data.from, data.xml);
-        return;
-      }
-      if (kind === 'discovery-done') {
-        if (Player.onDiscoveryDone) Player.onDiscoveryDone();
-        return;
-      }
-      if (kind === 'bench') {
-        if (Player.onBench) Player.onBench(data);
-        return;
-      }
-      if (kind === 'stats') {
-        console.log('[stats ' + slot + '] ' + json);
-        if (slot >= 0 && slots[slot].running && !slots[slot].stopping) {
-          setStatus(slot, data.fps > 0 ? 'live' : 'connecting', data.fps > 0 ? '' : I18n.t('player.waiting'));
-          if (Player.onStats) Player.onStats(slot, data);
-        }
-        return;
-      }
-      if (kind === 'play') {
-        if (data.mode === 'native' && slots[slot].want) {
-          requestKeyFrame(slots[slot].want.url);
-          watchFirstFrame(slot);
-        }
-        return;
-      }
-      if (kind === 'first-frame') {
-        console.log('[first-frame ' + slot + '] ' + data.ms + ' ms after PLAY');
-        clearTimeout(slots[slot].firstFrameTimer);
-        return;
-      }
-      if (kind === 'fatal' && slot >= 0) slots[slot].fatalKey = slots[slot].key;
-      console.log('[' + kind + ' ' + slot + '] ' + (data.code ? data.code + ': ' : '') + data.text);
-      if (!data.ok && slot >= 0 && !slots[slot].stopping) setStatus(slot, 'error', errorText(kind, data));
+      try { data = JSON.parse(json); } catch (e) { return; }  // malformed event: ignored
+      (EVENTS[kind] || onLogEvent)(slot, data, kind, json);
     },
     onStopped: function (slot) {
       var s = slots[slot];

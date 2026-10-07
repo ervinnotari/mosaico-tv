@@ -185,3 +185,21 @@ test('connection status follows the language', () => {
   en.Player.show([want('a')], true);
   assert.strictEqual(en.status[0].text, 'Connecting…');
 });
+
+test('discovery and benchmark events reach their callbacks', () => {
+  const ctx = setup();
+  const seen = [];
+  ctx.Player.onDiscovery = (from, xml) => seen.push(['match', from, xml]);
+  ctx.Player.onDiscoveryDone = () => seen.push(['done']);
+  ctx.Player.onBench = (r) => seen.push(['bench', r.mpx_per_s]);
+  event(ctx, -1, 'discovery-match', { from: '10.0.0.5', xml: '<x/>' });
+  event(ctx, -1, 'discovery-done', {});
+  event(ctx, -1, 'bench', { ok: true, mpx_per_s: 68 });
+  ctx.Module.onEvent(-1, 'stats', '{not json');  // malformed: ignored
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(seen)), [['match', '10.0.0.5', '<x/>'], ['done'], ['bench', 68]]);
+  // Without callbacks nothing breaks.
+  ctx.Player.onDiscovery = ctx.Player.onDiscoveryDone = ctx.Player.onBench = null;
+  event(ctx, -1, 'discovery-match', { from: 'x', xml: '' });
+  event(ctx, -1, 'discovery-done', {});
+  event(ctx, -1, 'bench', {});
+});

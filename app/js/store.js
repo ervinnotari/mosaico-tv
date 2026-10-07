@@ -24,7 +24,7 @@ var Store = (function () {
       var saved = JSON.parse(localStorage.getItem(KEY) || 'null');
       if (saved && Array.isArray(saved.cameras)) state = saved;
     } catch (e) { /* storage not available: start empty */ }
-    if ([1, 4, 8, 16].indexOf(state.layout) < 0) state.layout = 4;
+    if (![1, 4, 8, 16].includes(state.layout)) state.layout = 4;
   }
 
   function save() {
@@ -32,12 +32,12 @@ var Store = (function () {
   }
 
   function newId() {
-    return 'c' + Date.now().toString(36) + Math.floor(Math.random() * 1e6).toString(36);
+    return 'c' + Date.now().toString(36) + crypto.getRandomValues(new Uint32Array(1))[0].toString(36);
   }
 
   function brand(id) {
-    for (var i = 0; i < BRANDS.length; i++) if (BRANDS[i].id === id) return BRANDS[i];
-    return BRANDS[BRANDS.length - 1];
+    var custom = BRANDS[BRANDS.length - 1];  // "Other (enter the path)"
+    return BRANDS.find(function (b) { return b.id === id; }) || custom;
   }
 
   function path(p) {
@@ -50,15 +50,15 @@ var Store = (function () {
   function urlsFromForm(f) {
     var b = brand(f.brand);
     var auth = f.user ? encodeURIComponent(f.user) + ':' + encodeURIComponent(f.pass || '') + '@' : '';
-    var base = 'rtsp://' + auth + f.host.trim() + ':' + (parseInt(f.port, 10) || 554);
-    var ch = parseInt(f.channel, 10) || 1;
+    var base = 'rtsp://' + auth + f.host.trim() + ':' + (Number.parseInt(f.port, 10) || 554);
+    var ch = Number.parseInt(f.channel, 10) || 1;
     var main = b.id === 'custom' ? path(f.mainPath) : b.main.replace('{ch}', ch);
     var sub = b.id === 'custom' ? path(f.subPath) : b.sub.replace('{ch}', ch);
     return { main: base + main, sub: sub ? base + sub : base + main };
   }
 
   function sanitize(url) {
-    return String(url).replace(/(:\/\/[^:\/@\s]*:)[^@\/\s]*@/, '$1***@');
+    return String(url).replace(/(:\/\/[^:/@\s]*:)[^@/\s]*@/, '$1***@');
   }
 
   load();
@@ -71,8 +71,7 @@ var Store = (function () {
 
     cameras: function () { return state.cameras; },
     camera: function (id) {
-      for (var i = 0; i < state.cameras.length; i++) if (state.cameras[i].id === id) return state.cameras[i];
-      return null;
+      return state.cameras.find(function (c) { return c.id === id; }) || null;
     },
     // cam: {name, main, sub, form?, source}
     add: function (cam) {

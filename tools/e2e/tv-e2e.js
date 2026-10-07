@@ -11,16 +11,16 @@
  * return; language. The cameras saved on the TV are kept before and restored
  * at the end.
  *
- * Usage: node tools/e2e/tv-e2e.js [tv-ip=192.168.1.17] [--onvif]
+ * Usage: node tools/e2e/tv-e2e.js <tv-ip> [--onvif]
  *   --onvif  also runs the ONVIF search (needs an ONVIF device on the network)
  * Requirements: app installed (scripts\install.bat), Developer Mode, ffmpeg.
  */
 'use strict';
 
-const { spawn, execFileSync } = require('child_process');
-const fs = require('fs');
-const os = require('os');
-const path = require('path');
+const { spawn, execFileSync } = require('node:child_process');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 
 if (typeof fetch !== 'function' || typeof WebSocket !== 'function') {
   console.error(`needs Node 22 or newer (fetch and WebSocket); this is ${process.version}`);
@@ -28,7 +28,12 @@ if (typeof fetch !== 'function' || typeof WebSocket !== 'function') {
 }
 
 const ROOT = path.join(__dirname, '..', '..');
-const TV = process.argv.slice(2).find((a) => !a.startsWith('--')) || '192.168.1.17';
+const TV = process.argv.slice(2).find((a) => !a.startsWith('--'));
+// The address goes to sdb on the command line: IPv4 or host name only.
+if (!TV || !/^[A-Za-z0-9][A-Za-z0-9.-]*$/.test(TV)) {
+  console.error('usage: node tools/e2e/tv-e2e.js <tv-ip> [--onvif]');
+  process.exit(2);
+}
 const WITH_ONVIF = process.argv.includes('--onvif');
 const SERIAL = `${TV}:26101`;
 // The app id is defined only in app/config.xml.
@@ -56,7 +61,8 @@ function ensureClip(file, codec) {
     : ['-c:v', 'libx264', '-x264-params', 'keyint=25:min-keyint=25:aud=1', '-f', 'h264'];
   // 352x240: the H.264 becomes a "substream" and fits the budget of any layout.
   const size = codec === 'h265' ? '1280x720' : '352x240';
-  execFileSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', '-f', 'lavfi',
+  // ffmpeg from the developer's PATH (or FFMPEG): a local test tool, not a service.
+  execFileSync(process.env.FFMPEG || 'ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', '-f', 'lavfi', // NOSONAR
     '-i', `testsrc2=size=${size}:rate=25`, '-t', '20', ...enc, '-pix_fmt', 'yuv420p', file]);
 }
 
@@ -68,10 +74,10 @@ function startServer(file, port) {
   const server = { proc, plays: 0, teardowns: 0, closed: 0, methods: [] };
   proc.stdout.on('data', (d) => {
     for (const line of d.toString().split('\n')) {
-      const m = line.match(/\] ([A-Z_]+) rtsp:/);
+      const m = /\] ([A-Z_]+) rtsp:/.exec(line);
       if (m) server.methods.push(m[1]);
       if (/ PLAY /.test(line)) server.plays++;
-      if (/ closed$/.test(line.trim())) server.closed++;
+      if (line.trim().endsWith(' closed')) server.closed++;
     }
   });
   return server;
@@ -100,14 +106,23 @@ async function launchDebug() {
     sdb('forward', `tcp:${port}`, `tcp:${port}`);
     for (let i = 0; i < 20; i++) {
       try {
-        const targets = await (await fetch(`http://127.0.0.1:${port}/json`)).json();
-        if (targets[0]) return targets[0].webSocketDebuggerUrl;
+        // Polling on purpose: one request at a time until DevTools is up.
+        const targets = await (await fetch(`http://127.0.0.1:${port}/json`)).json(); // NOSONAR
+        if (targets[0]) return devToolsUrl(targets[0].webSocketDebuggerUrl, port);
       } catch (e) { /* still starting */ }
       await sleep(500);
     }
     lastError = 'DevTools did not answer';
   }
   throw new Error(lastError);
+}
+
+// The DevTools page id comes from the TV: keep only the path and always
+// connect to the local forwarded port, never to an address from the reply.
+function devToolsUrl(reported, port) {
+  const id = new URL(reported).pathname;
+  if (!/^\/devtools\/page\/[\w-]+$/.test(id)) throw new Error('unexpected DevTools URL: ' + reported);
+  return `ws://127.0.0.1:${port}${id}`;
 }
 
 async function connect(wsUrl) {
@@ -129,10 +144,10 @@ async function connect(wsUrl) {
     // awaitPromise: waits for the Promise returned by the expression.
     async js(expr, awaitPromise) {
       const r = await send('Runtime.evaluate', { expression: expr, returnByValue: true, awaitPromise: !!awaitPromise });
-      if (r.result && r.result.exceptionDetails) {
-        throw new Error('JS: ' + (r.result.exceptionDetails.exception || {}).description);
+      if (r.result?.exceptionDetails) {
+        throw new Error('JS: ' + r.result.exceptionDetails.exception?.description);
       }
-      return r.result && r.result.result ? r.result.result.value : undefined;
+      return r.result?.result?.value;
     },
     async key(name) {
       const code = KEYS[name];
@@ -144,10 +159,11 @@ async function connect(wsUrl) {
     async until(expr, ms) {
       const end = Date.now() + ms;
       let v;
+      // Polling on purpose: checks the page one evaluation at a time.
       while (Date.now() < end) {
-        v = await this.js(expr).catch(() => undefined);
-        if (v) return v;
-        await sleep(300);
+        v = await this.js(expr).catch(() => undefined); // NOSONAR
+        if (v) break;
+        await sleep(300); // NOSONAR
       }
       return v;
     },
@@ -330,7 +346,11 @@ async function main() {
     // Restores the user's cameras and the normal app.
     if (saved) {
       const { cams } = JSON.parse(saved);
-      await app.js(`(function(){ ${cams === null ? "localStorage.removeItem('rtsp-player-v1')" : `localStorage.setItem('rtsp-player-v1', ${JSON.stringify(cams)})`}; location.reload(); })()`).catch(() => {});
+      // The saved data goes in as base64 (only [A-Za-z0-9+/=]), never as code.
+      const restore = cams === null
+        ? "localStorage.removeItem('rtsp-player-v1')"
+        : `localStorage.setItem('rtsp-player-v1', new TextDecoder().decode(Uint8Array.from(atob('${Buffer.from(cams, 'utf8').toString('base64')}'), function (ch) { return ch.charCodeAt(0); })))`;
+      await app.js(`(function(){ ${restore}; location.reload(); })()`).catch(() => {});
     }
     app.close();
     srv264.proc.kill();
@@ -342,4 +362,5 @@ async function main() {
   process.exit(failed.length ? 1 : 0);
 }
 
-main().catch((e) => { console.error('error: ' + e.message); process.exit(2); });
+// CommonJS script (no top-level await).
+main().catch((e) => { console.error('error: ' + e.message); process.exit(2); }); // NOSONAR
