@@ -1,0 +1,74 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Ervin Notari Junior
+#
+# SonarQube Cloud: code quality, security and test coverage (JavaScript and
+# C++) on every push to main and every pull request. Setup (token,
+# organization and project key) is in docs/SONAR.md. Without the SONAR_TOKEN
+# secret (for example in pull requests from forks) the scan is skipped.
+name: Sonar
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: sonar-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  sonar:
+    name: SonarQube Cloud analysis
+    runs-on: ubuntu-24.04
+    env:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      BUILD_WRAPPER_OUT_DIR: build/build-wrapper
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history: Sonar uses it for blame and new-code detection.
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: JavaScript tests with coverage
+        run: |
+          mkdir -p build/coverage
+          node --test --experimental-test-coverage \
+            --test-reporter=spec --test-reporter-destination=stdout \
+            --test-reporter=lcov --test-reporter-destination=build/coverage/lcov.info \
+            "tests/js/*.test.js"
+
+      - name: Install Build Wrapper
+        uses: SonarSource/sonarqube-scan-action/install-build-wrapper@v8
+
+      - name: C++ tests with coverage (under Build Wrapper)
+        run: |
+          build-wrapper-linux-x86-64 --out-dir "$BUILD_WRAPPER_OUT_DIR" \
+            env CXXFLAGS="--coverage -O0" OUT=build/cpp/unit_tests sh scripts/ci/cpp-tests.sh
+
+      - name: C++ coverage report
+        run: |
+          pipx install gcovr
+          gcovr --root . --filter 'wasm/src/' --filter 'wasm/include/' \
+            --sonarqube build/coverage/cpp-sonarqube.xml build/cpp
+
+      - name: SonarQube Cloud scan
+        if: env.SONAR_TOKEN != ''
+        uses: SonarSource/sonarqube-scan-action@v8
+        with:
+          args: >
+            -Dsonar.organization=${{ vars.SONAR_ORGANIZATION || 'ervinnotari' }}
+            -Dsonar.projectKey=${{ vars.SONAR_PROJECT_KEY || 'ervinnotari_mosaico-tv' }}
+
+      - name: Scan skipped
+        if: env.SONAR_TOKEN == ''
+        run: echo "::notice::SONAR_TOKEN is not set; the Sonar scan was skipped (see docs/SONAR.md)."

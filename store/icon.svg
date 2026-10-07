@@ -1,0 +1,72 @@
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- Copyright 2026 Ervin Notari Junior -->
+<!-- Mosaico app icon: a 1+5 camera mosaic (one large live tile, five small
+     tiles, one of them a camera lens). Rendered to PNG by tools/render-icon. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#12285c"/>
+      <stop offset="1" stop-color="#060c1f"/>
+    </linearGradient>
+    <linearGradient id="rim" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#5aa8ff"/>
+      <stop offset="1" stop-color="#1d4fd8"/>
+    </linearGradient>
+    <linearGradient id="big" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#3d9bff"/>
+      <stop offset="1" stop-color="#1747c9"/>
+    </linearGradient>
+    <linearGradient id="tileA" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#244a8f"/>
+      <stop offset="1" stop-color="#16306a"/>
+    </linearGradient>
+    <linearGradient id="tileB" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2f62b8"/>
+      <stop offset="1" stop-color="#1c3f86"/>
+    </linearGradient>
+    <radialGradient id="lens" cx="0.4" cy="0.38" r="0.65">
+      <stop offset="0" stop-color="#9fd0ff"/>
+      <stop offset="0.35" stop-color="#2f7bff"/>
+      <stop offset="1" stop-color="#071433"/>
+    </radialGradient>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="18" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <!-- Base: rounded square with a blue rim -->
+  <rect x="52" y="52" width="920" height="920" rx="196" fill="url(#rim)" filter="url(#glow)"/>
+  <rect x="60" y="60" width="904" height="904" rx="190" fill="url(#bg)"/>
+
+  <!-- Mosaic 1+5: 3x3 grid, cell 216, gap 28, origin (156,156) -->
+  <!-- Large live tile (2x2) -->
+  <rect x="156" y="156" width="460" height="460" rx="44" fill="url(#big)"/>
+  <path d="M338 296 L338 476 L488 386 Z" fill="#ffffff"/>
+  <circle cx="226" cy="226" r="22" fill="#ff4d5e"/>
+
+  <!-- Right column -->
+  <rect x="644" y="156" width="216" height="216" rx="36" fill="url(#tileB)"/>
+  <rect x="644" y="400" width="216" height="216" rx="36" fill="url(#tileA)"/>
+
+  <!-- Bottom row -->
+  <rect x="156" y="644" width="216" height="216" rx="36" fill="url(#tileA)"/>
+  <rect x="400" y="644" width="216" height="216" rx="36" fill="url(#tileB)"/>
+  <rect x="644" y="644" width="216" height="216" rx="36" fill="url(#tileA)"/>
+
+  <!-- Camera lens in the top-right tile -->
+  <circle cx="752" cy="264" r="70" fill="#0a1736"/>
+  <circle cx="752" cy="264" r="56" fill="url(#lens)"/>
+  <circle cx="734" cy="246" r="14" fill="#ffffff" opacity="0.8"/>
+
+  <!-- Simple scenes in the other small tiles: horizon lines -->
+  <path d="M672 560 L720 512 L752 540 L800 488 L832 520 L832 588 L672 588 Z" fill="#3d6fc4" opacity="0.7"/>
+  <path d="M184 804 L232 756 L264 784 L312 732 L344 764 L344 832 L184 832 Z" fill="#3d6fc4" opacity="0.7"/>
+  <!-- Building (bottom middle) and a sun over hills (bottom right) -->
+  <path d="M436 832 L436 728 L480 728 L480 700 L532 700 L532 752 L580 752 L580 832 Z" fill="#3d6fc4" opacity="0.7"/>
+  <rect x="452" y="744" width="14" height="14" fill="#0f2452" opacity="0.8"/>
+  <rect x="498" y="718" width="14" height="14" fill="#0f2452" opacity="0.8"/>
+  <rect x="498" y="752" width="14" height="14" fill="#0f2452" opacity="0.8"/>
+  <circle cx="796" cy="712" r="26" fill="#5b8fe6" opacity="0.6"/>
+  <path d="M672 832 C712 768 760 768 800 800 C816 788 832 786 832 786 L832 832 Z" fill="#3d6fc4" opacity="0.7"/>
+</svg>

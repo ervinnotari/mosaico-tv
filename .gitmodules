@@ -1,0 +1,4 @@
+[submodule "wasm/third_party/openh264"]
+	path = wasm/third_party/openh264
+	url = https://github.com/cisco/openh264.git
+	shallow = true

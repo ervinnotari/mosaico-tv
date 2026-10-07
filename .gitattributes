@@ -1,0 +1,11 @@
+# Line endings: shell scripts break with CRLF on Linux, batch files break
+# with LF in cmd.exe. Everything else is normalized to LF in the repository.
+* text=auto eol=lf
+*.sh text eol=lf
+*.bat text eol=crlf
+
+# Binary files
+*.png binary
+*.bin binary
+*.wgt binary
+*.wasm binary

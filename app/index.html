@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- Copyright 2026 Ervin Notari Junior -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=1920, initial-scale=1">
+  <title>Mosaico</title>
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+  <!-- Video: canvas (software decoder) and <video> (TV native player). -->
+  <canvas id="canvas" width="1920" height="1080"></canvas>
+  <video id="video" muted></video>
+
+  <!-- ===================== Mosaic ===================== -->
+  <section id="screen-mosaic" class="screen">
+    <div id="tiles"></div>
+
+    <div id="toolbar">
+      <div class="brand">Mosaico</div>
+      <div class="group">
+        <button class="focusable tb-layout" data-layout="1">1</button>
+        <button class="focusable tb-layout" data-layout="4">4</button>
+        <button class="focusable tb-layout" data-layout="8">8</button>
+        <button class="focusable tb-layout" data-layout="16">16</button>
+      </div>
+      <div class="group">
+        <button class="focusable" id="tb-prev">‹</button>
+        <span id="tb-page">1/1</span>
+        <button class="focusable" id="tb-next">›</button>
+      </div>
+      <div class="spacer"><span id="tb-info"></span></div>
+      <!-- "settings" icon from Material Icons (Apache 2.0). -->
+      <button class="focusable icon-button" id="tb-cameras" aria-label="Settings" title="Settings" data-i18n-aria-label="toolbar.settings" data-i18n-title="toolbar.settings">
+        <svg viewBox="0 0 24 24" width="40" height="40" aria-hidden="true"><path fill="currentColor" d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.488.488 0 0 0-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.484.484 0 0 0-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg>
+      </button>
+    </div>
+
+    <div id="empty" class="empty">
+      <h1 data-i18n="empty.title"></h1>
+      <p data-i18n="empty.text"></p>
+      <div class="actions">
+        <button class="focusable primary" id="empty-search" data-i18n="empty.search"></button>
+        <button class="focusable" id="empty-manual" data-i18n="common.manual"></button>
+      </div>
+    </div>
+
+    <div id="hint" class="hint" data-i18n="hint"></div>
+
+    <div id="exit-dialog" class="dialog compact-dialog">
+      <h2 data-i18n="exit.title"></h2>
+      <p class="note" data-i18n="exit.note"></p>
+      <div class="actions">
+        <button class="focusable" id="exit-confirm" data-i18n="exit.confirm"></button>
+        <button class="focusable primary" id="exit-cancel" data-i18n="common.cancel"></button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== Camera list ===================== -->
+  <section id="screen-cameras" class="screen panel-screen">
+    <header>
+      <h1 data-i18n="cameras.title"></h1>
+      <div class="actions">
+        <button class="focusable primary" id="cam-search" data-i18n="cameras.search"></button>
+        <button class="focusable" id="cam-manual" data-i18n="common.manual"></button>
+        <button class="focusable" id="cam-about" data-i18n="cameras.about"></button>
+        <button class="focusable" id="cam-back" data-i18n="common.back"></button>
+      </div>
+    </header>
+    <div class="perf"><span id="cam-perf"></span><button class="focusable" id="cam-remeasure" data-i18n="cameras.remeasure"></button></div>
+    <p class="note" data-i18n="cameras.order_note"></p>
+    <div id="cam-list" class="list"></div>
+  </section>
+
+  <!-- ===================== Manual setup ===================== -->
+  <section id="screen-form" class="screen panel-screen">
+    <header>
+      <h1 id="form-title"></h1>
+    </header>
+    <div class="form">
+      <div class="field focusable" data-input="f-name"><label data-i18n="form.name"></label><input id="f-name" type="text" data-i18n-placeholder="form.name_ph"></div>
+      <div class="field focusable choice" id="f-brand"><label data-i18n="form.brand"></label><span class="value"></span><span class="arrows">◀ ▶</span></div>
+      <div class="row">
+        <div class="field focusable" data-input="f-host"><label data-i18n="form.host"></label><input id="f-host" type="text" data-i18n-placeholder="form.host_ph"></div>
+        <div class="field focusable small" data-input="f-port"><label data-i18n="form.port"></label><input id="f-port" type="text" value="554"></div>
+        <div class="field focusable small brand-only" data-input="f-channel"><label data-i18n="form.channel"></label><input id="f-channel" type="text" value="1"></div>
+      </div>
+      <div class="row">
+        <div class="field focusable" data-input="f-user"><label data-i18n="common.user"></label><input id="f-user" type="text" value="admin"></div>
+        <div class="field focusable" data-input="f-pass"><label data-i18n="common.password"></label><input id="f-pass" type="password"></div>
+      </div>
+      <div class="field focusable custom-only" data-input="f-main"><label data-i18n="form.main"></label><input id="f-main" type="text" placeholder="/stream1"></div>
+      <div class="field focusable custom-only" data-input="f-sub"><label data-i18n="form.sub"></label><input id="f-sub" type="text" placeholder="/stream2"></div>
+      <p class="preview" id="f-preview"></p>
+      <p class="error" id="f-error"></p>
+      <div class="actions">
+        <button class="focusable primary" id="f-save" data-i18n="common.save"></button>
+        <button class="focusable" id="f-cancel" data-i18n="common.cancel"></button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== About and licenses ===================== -->
+  <section id="screen-about" class="screen panel-screen">
+    <header>
+      <h1><span data-i18n="about.title"></span> <span class="about-version" id="about-version"></span></h1>
+      <div class="actions">
+        <button class="focusable" id="about-back" data-i18n="common.back"></button>
+      </div>
+    </header>
+    <!-- Documents copied to app/licenses/ by scripts/package.bat. -->
+    <div class="about-tabs actions">
+      <button class="focusable about-tab" data-doc="credits" data-i18n="about.credits"></button>
+      <button class="focusable about-tab" data-doc="third" data-i18n="about.third"></button>
+      <button class="focusable about-tab" data-doc="license" data-i18n="about.license"></button>
+      <span class="note about-hint" data-i18n="about.hint"></span>
+    </div>
+    <div id="about-doc" class="md focusable" tabindex="0"></div>
+  </section>
+
+  <!-- ===================== ONVIF search ===================== -->
+  <section id="screen-search" class="screen panel-screen">
+    <header>
+      <h1 data-i18n="search.title"></h1>
+      <div class="actions">
+        <button class="focusable" id="s-again" data-i18n="search.again"></button>
+        <button class="focusable" id="s-back" data-i18n="common.back"></button>
+      </div>
+    </header>
+    <p class="note" id="s-status"></p>
+    <div id="s-list" class="list"></div>
+
+    <div id="s-login" class="dialog">
+      <h2 id="s-login-title"></h2>
+      <div class="row">
+        <div class="field focusable" data-input="s-user"><label data-i18n="common.user"></label><input id="s-user" type="text" value="admin"></div>
+        <div class="field focusable" data-input="s-pass"><label data-i18n="common.password"></label><input id="s-pass" type="password"></div>
+      </div>
+      <p class="error" id="s-login-error"></p>
+      <div class="actions">
+        <button class="focusable primary" id="s-connect" data-i18n="common.connect"></button>
+        <button class="focusable" id="s-login-cancel" data-i18n="common.cancel"></button>
+      </div>
+    </div>
+
+    <div id="s-channels" class="dialog">
+      <h2 id="s-channels-title"></h2>
+      <div id="s-channel-list" class="list compact"></div>
+      <div class="actions">
+        <button class="focusable primary" id="s-add" data-i18n="common.add"></button>
+        <button class="focusable" id="s-channels-cancel" data-i18n="common.cancel"></button>
+      </div>
+    </div>
+  </section>
+
+  <div id="analyzing"><div class="box"><h2 data-i18n="analyzing.title"></h2><p data-i18n="analyzing.text"></p></div></div>
+  <div id="toast"></div>
+
+  <script src="js/i18n.js"></script>
+  <script src="js/onvif.js"></script>
+  <script src="js/store.js"></script>
+  <script src="js/nav.js"></script>
+  <script src="js/player.js"></script>
+  <script src="js/capability.js"></script>
+  <script src="js/markdown.js"></script>
+  <script src="js/app.js"></script>
+  <script src="wasm/player.js"></script>
+</body>
+</html>

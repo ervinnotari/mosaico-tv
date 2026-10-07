@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- Copyright 2026 Ervin Notari Junior -->
+<!-- If TV Seller Office assigns a different Tizen ID, change it only here:
+     the scripts and the TV end-to-end test read the app id from this file. -->
+<widget xmlns="http://www.w3.org/ns/widgets" xmlns:tizen="http://tizen.org/ns/widgets" id="https://github.com/ervinnotari/mosaico-tv" version="1.0.0" viewmodes="maximized">
+    <tizen:application id="MosaicoTv1.Mosaico" package="MosaicoTv1" required_version="6.0"/>
+    <name>Mosaico</name>
+    <description>RTSP cameras and DVRs straight on the TV: 1/4/8/16 mosaic, manual setup and ONVIF search</description>
+    <description xml:lang="pt-br">Câmeras e DVRs RTSP direto na TV: mosaico 1/4/8/16, cadastro manual e busca ONVIF</description>
+    <icon src="icon.png"/>
+    <content src="index.html"/>
+    <access origin="*" subdomains="true"/>
+    <feature name="http://tizen.org/feature/screen.size.all"/>
+    <tizen:privilege name="http://tizen.org/privilege/internet"/>
+    <tizen:privilege name="http://tizen.org/privilege/tv.inputdevice"/>
+    <tizen:profile name="tv-samsung"/>
+    <tizen:setting screen-orientation="landscape" context-menu="disable" background-support="disable" encryption="disable" install-location="auto" hwkey-event="enable"/>
+</widget>

@@ -1,0 +1,107 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Ervin Notari Junior
+#
+# Release: pushing a tag vX.Y.Z (matching the version in app/config.xml)
+# runs the tests, builds the WebAssembly module, signs the .wgt with the
+# Samsung certificates stored as repository secrets and publishes a GitHub
+# Release with the package and its SHA-256.
+#
+# Required secrets (see docs/RELEASING.md):
+#   TIZEN_AUTHOR_P12_BASE64, TIZEN_AUTHOR_PASSWORD,
+#   TIZEN_DISTRIBUTOR_P12_BASE64, TIZEN_DISTRIBUTOR_PASSWORD
+name: Release
+
+on:
+  push:
+    tags: ['v*.*.*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    environment: release
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # OpenH264 (wasm/third_party/openh264) is a git submodule.
+          submodules: true
+
+      - name: Check that the tag matches app/config.xml
+        id: version
+        run: |
+          VERSION=$(sed -n 's/.*<widget [^>]*version="\([^"]*\)".*/\1/p' app/config.xml)
+          TAG="${GITHUB_REF_NAME#v}"
+          if [ "$VERSION" != "$TAG" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match version $VERSION in app/config.xml"
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: JavaScript tests
+        run: node --test "tests/js/*.test.js"
+
+      - name: C++ tests
+        run: sh scripts/ci/cpp-tests.sh
+
+      # Emscripten 1.39 (2019) needs distutils (removed in Python 3.12) and
+      # its clang needs libxml2.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install libxml2
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq libxml2
+
+      - name: Cache Samsung Emscripten SDK
+        uses: actions/cache@v4
+        with:
+          path: ~/samsung-emsdk
+          key: samsung-emsdk-1.39.4.7-linux64
+
+      - name: Set up Samsung Emscripten SDK
+        id: emsdk
+        run: echo "path=$(sh scripts/ci/setup-emsdk.sh "$HOME/samsung-emsdk")" >> "$GITHUB_OUTPUT"
+
+      - name: Build
+        run: sh scripts/build.sh
+        env:
+          SAMSUNG_EMSDK: ${{ steps.emsdk.outputs.path }}
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Cache Tizen CLI
+        uses: actions/cache@v4
+        with:
+          path: ~/tizen-studio
+          key: tizen-cli-6.1-linux
+
+      - name: Set up Tizen CLI
+        id: tizen
+        run: echo "cli=$(sh scripts/ci/setup-tizen-cli.sh "$HOME/tizen-studio")" >> "$GITHUB_OUTPUT"
+
+      - name: Sign and package
+        run: sh scripts/ci/package.sh
+        env:
+          TIZEN_CLI: ${{ steps.tizen.outputs.cli }}
+          TIZEN_AUTHOR_P12_BASE64: ${{ secrets.TIZEN_AUTHOR_P12_BASE64 }}
+          TIZEN_AUTHOR_PASSWORD: ${{ secrets.TIZEN_AUTHOR_PASSWORD }}
+          TIZEN_DISTRIBUTOR_P12_BASE64: ${{ secrets.TIZEN_DISTRIBUTOR_P12_BASE64 }}
+          TIZEN_DISTRIBUTOR_PASSWORD: ${{ secrets.TIZEN_DISTRIBUTOR_PASSWORD }}
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            "out/Mosaico-${{ steps.version.outputs.version }}.wgt" \
+            "out/Mosaico-${{ steps.version.outputs.version }}.wgt.sha256" \
+            --title "Mosaico ${{ steps.version.outputs.version }}" \
+            --generate-notes

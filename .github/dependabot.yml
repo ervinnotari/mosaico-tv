@@ -1,0 +1,16 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Ervin Notari Junior
+#
+# Weekly pull requests updating the actions used by the workflows. The app
+# has no npm/pip dependencies; OpenH264 is vendored in wasm/third_party.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
+    commit-message:
+      prefix: ci
