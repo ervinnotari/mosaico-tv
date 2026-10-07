@@ -8,7 +8,8 @@
  *
  * Scenarios: live H.264 mosaic; H.265 in the mosaic (error without reconnect);
  * H.265 full screen in the native player; back to the mosaic; background and
- * return; language. The cameras saved on the TV are kept before and restored
+ * return; language. Prints the measured performance and the allowed layouts.
+ * The cameras saved on the TV are kept before and restored
  * at the end.
  *
  * Usage: node tools/e2e/tv-e2e.js <tv-ip> [--onvif]
@@ -129,14 +130,30 @@ async function connect(wsUrl) {
   const ws = new WebSocket(wsUrl);
   await new Promise((resolve, reject) => { ws.onopen = resolve; ws.onerror = reject; });
   let id = 0;
+  let closed = false;
   const pending = new Map();
   ws.onmessage = (ev) => {
     const msg = JSON.parse(ev.data);
-    if (msg.id && pending.has(msg.id)) { pending.get(msg.id)(msg); pending.delete(msg.id); }
+    if (msg.id && pending.has(msg.id)) { pending.get(msg.id).resolve(msg); pending.delete(msg.id); }
   };
-  const send = (method, params = {}) => new Promise((resolve) => {
+  // The TV may close the app (e.g. low memory in the background): every
+  // pending call fails at once instead of waiting forever.
+  ws.onclose = () => {
+    closed = true;
+    for (const p of pending.values()) p.reject(new Error('DevTools connection closed'));
+    pending.clear();
+  };
+  const send = (method, params = {}) => new Promise((resolve, reject) => {
+    if (closed) { reject(new Error('DevTools connection closed')); return; }
     const msgId = ++id;
-    pending.set(msgId, resolve);
+    const timer = setTimeout(() => {
+      pending.delete(msgId);
+      reject(new Error('DevTools did not answer ' + method));
+    }, 15000);
+    pending.set(msgId, {
+      resolve: (msg) => { clearTimeout(timer); resolve(msg); },
+      reject: (e) => { clearTimeout(timer); reject(e); }
+    });
     ws.send(JSON.stringify({ id: msgId, method, params }));
   });
   const KEYS = { Left: 37, Up: 38, Right: 39, Down: 40, Enter: 13, Back: 10009 };
@@ -167,6 +184,7 @@ async function connect(wsUrl) {
       }
       return v;
     },
+    closed: () => closed,
     close: () => ws.close()
   };
 }
@@ -207,12 +225,22 @@ async function main() {
 
   console.log(`TV ${TV}, test servers on ${pc}`);
   try { execFileSync(SDB, ['connect', TV], { timeout: 15000 }); } catch (e) { /* already connected */ }
-  const app = await connect(await launchDebug());
+  let app = await connect(await launchDebug());
   let saved = null;
 
   try {
     await step('app loads and measures the performance', async () => {
       check(await app.until('Player.isReady() && Capability.ready()', 30000), 'module or profile did not become ready');
+      // What this TV can do: capacity and the layouts allowed with typical
+      // DVR substreams (352x240 @ 25 fps).
+      const perf = JSON.parse(await app.js(`JSON.stringify((function () {
+        var p = Capability.profile();
+        var cams = []; for (var i = 0; i < 16; i++) cams.push({});
+        return { cores: p.cores, bench: p.benchMpx, capacity: p.capacityMpx, fallback: !!p.fallback,
+          layouts: [1, 4, 8, 16].filter(function (n) { return Capability.check(n, cams).ok; }) };
+      })())`));
+      console.log(`        (${perf.cores} cores, benchmark ${perf.bench.toFixed(1)} Mpx/s, capacity ` +
+        `${perf.capacity.toFixed(1)} Mpx/s${perf.fallback ? ', estimated' : ''}, layouts ${perf.layouts.join('/')})`);
     });
 
     // Saves what the user had and sets up the test scenario.
@@ -229,7 +257,10 @@ async function main() {
     });
 
     await step('RTSP: OPTIONS before DESCRIBE, then SETUP and PLAY', async () => {
-      const seq = srv264.methods.slice(0, 4).join(' > ');
+      // The commands of the connection that reached PLAY (an earlier one may
+      // have been stopped, e.g. when the TV changes the layout at startup).
+      const play = srv264.methods.indexOf('PLAY');
+      const seq = srv264.methods.slice(Math.max(0, play - 3), play + 1).join(' > ');
       check(seq === 'OPTIONS > DESCRIBE > SETUP > PLAY', `sequence: ${seq}`);
     });
 
@@ -298,12 +329,24 @@ async function main() {
     await step('background disconnects everything', async () => {
       sdb('shell', '0', 'execute', 'org.tizen.browser');
       const ok = await app.until('document.hidden && [0,1,2,3].every(function(i){ return !Module._player_running(i); })', 15000);
-      check(ok, 'cameras stayed connected');
+      // Some TVs (e.g. 2021 Crystal UHD) close the app instead of pausing it:
+      // then nothing is connected either.
+      check(ok || app.closed(), 'cameras stayed connected');
+      if (app.closed()) console.log('        (the TV closed the app in the background)');
     });
 
     await step('on return, reconnects by itself', async () => {
-      sdb('shell', '0', 'execute', APP_ID);
-      check(await app.until(`!document.hidden && ${STATUS(0)} === 'live'`, 20000), `status ${await app.js(STATUS(0))}`);
+      if (!app.closed()) {
+        sdb('shell', '0', 'execute', APP_ID);
+        await sleep(3000);
+      }
+      // Some TVs restart the app instead of resuming it (the debug connection
+      // drops): reopen it in debug mode; the saved cameras must come back live.
+      if (app.closed()) {
+        console.log('        (the TV restarted the app instead of resuming it)');
+        app = await connect(await launchDebug());
+      }
+      check(await app.until(`!document.hidden && ${STATUS(0)} === 'live'`, 30000), `status ${await app.js(STATUS(0))}`);
     });
 
     await step('language: follows the TV and switches the texts without reconnecting', async () => {
