@@ -108,7 +108,7 @@ var Nav = (function () {
   ARROWS[KEY.RIGHT] = 'right';
   ARROWS[KEY.UP] = 'up';
   ARROWS[KEY.DOWN] = 'down';
-  var LEAVE_EDITING = [KEY.IME_DONE, KEY.IME_CANCEL, KEY.ENTER, KEY.BACK, KEY.ESC, KEY.UP, KEY.DOWN];
+  var LEAVE_EDITING = new Set([KEY.IME_DONE, KEY.IME_CANCEL, KEY.ENTER, KEY.BACK, KEY.ESC, KEY.UP, KEY.DOWN]);
 
   function isEditable(el) {
     return el.classList.contains('field') && !!el.dataset.input;
@@ -117,7 +117,7 @@ var Nav = (function () {
   // With the TV keyboard open, only keys that close it are handled; the
   // left/right arrows move the cursor in the text.
   function onEditingKey(k, ev) {
-    if (!LEAVE_EDITING.includes(k)) return;
+    if (!LEAVE_EDITING.has(k)) return;
     stopEditing();
     ev.preventDefault();
     if (k === KEY.UP || k === KEY.DOWN) move(ARROWS[k]);

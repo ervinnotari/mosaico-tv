@@ -135,3 +135,29 @@ test('HTML texts are the en.json defaults of their data-i18n keys', () => {
   const fixed = texts.filter((s) => /[A-Za-zÀ-ú]{2,}/.test(s) && s !== 'Mosaico' && !keyedTexts.has(s));
   assert.deepStrictEqual(fixed, []);
 });
+
+test('a language without its file falls back to English', () => {
+  const { I18n } = load([], { language: 'en-US' });
+  I18n.LANGUAGES.zz = 'zz';  // listed, but there is no i18n/zz.json
+  assert.strictEqual(I18n.resolve('zz-ZZ'), 'en');
+  assert.strictEqual(I18n.setLanguage('zz'), false);
+  assert.strictEqual(I18n.language(), 'en');
+});
+
+test('apply() fills texts and attributes of the marked elements', () => {
+  const { I18n } = load([], { language: 'pt-BR' });
+  const el = (data) => ({ dataset: data, attrs: {}, setAttribute(k, v) { this.attrs[k] = v; },
+    getAttribute(k) { return k.startsWith('data-i18n-') ? data.attr : null; } });
+  const text = el({ i18n: 'exit.confirm' });
+  const placeholder = el({ attr: 'form.name_ph' });
+  const root = {
+    querySelectorAll(sel) {
+      if (sel === '[data-i18n]') return [text];
+      if (sel === '[data-i18n-placeholder]') return [placeholder];
+      return [];
+    }
+  };
+  I18n.apply(root);
+  assert.strictEqual(text.textContent, 'Sair');
+  assert.strictEqual(placeholder.attrs.placeholder, 'Ex.: Garagem');
+});

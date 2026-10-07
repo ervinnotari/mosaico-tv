@@ -246,5 +246,12 @@ var Onvif = (function () {
     }
   }
 
-  return { parseProbeMatch: parseProbeMatch, getChannels: getChannels, _sha1: sha1 };
+  return {
+    parseProbeMatch: parseProbeMatch,
+    getChannels: getChannels,
+    // Internals exposed for the unit tests.
+    _sha1: sha1,
+    _security: security,
+    _withCredentials: withCredentials
+  };
 })();

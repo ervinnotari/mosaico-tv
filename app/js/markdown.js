@@ -140,14 +140,22 @@ var Markdown = (function () {
 
   var BLOCKS = [fence, heading, rule, table, quote, list, paragraph];
 
+  // The first parser that recognizes the block renders it; paragraph always does.
+  function block(lines, i, out) {
+    for (var b = 0; b < BLOCKS.length; b++) {
+      var next = BLOCKS[b](lines, i, out);
+      if (next >= 0) return next;
+    }
+    return i + 1;
+  }
+
   function render(md) {
     var lines = String(md).replace(/\r\n?/g, '\n').split('\n');
     var out = [];
     var i = 0;
     while (i < lines.length) {
       if (!lines[i].trim()) { i++; continue; }
-      for (var b = 0, next = -1; next < 0; b++) next = BLOCKS[b](lines, i, out);
-      i = next;
+      i = block(lines, i, out);
     }
     return out.join('\n');
   }
