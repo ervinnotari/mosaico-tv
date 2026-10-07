@@ -30,7 +30,7 @@ default in `%USERPROFILE%\SamsungCertificate\<profile>\`.
 To copy a certificate as base64 to the clipboard (PowerShell):
 
 ```powershell
-[Convert]::ToBase64String([IO.File]::ReadAllBytes("$env:USERPROFILE\SamsungCertificate\rtsp-poc\author.p12")) | Set-Clipboard
+[Convert]::ToBase64String([IO.File]::ReadAllBytes("$env:USERPROFILE\SamsungCertificate\mosaico-tv\author.p12")) | Set-Clipboard
 ```
 
 To check a password before saving it (needs a JDK):
