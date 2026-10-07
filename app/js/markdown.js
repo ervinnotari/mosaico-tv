@@ -142,8 +142,8 @@ var Markdown = (function () {
 
   // The first parser that recognizes the block renders it; paragraph always does.
   function block(lines, i, out) {
-    for (var b = 0; b < BLOCKS.length; b++) {
-      var next = BLOCKS[b](lines, i, out);
+    for (var parse of BLOCKS) {
+      var next = parse(lines, i, out);
       if (next >= 0) return next;
     }
     return i + 1;
