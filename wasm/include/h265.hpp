@@ -38,6 +38,8 @@ class Depacketizer : public media::Depacketizer {
 
  private:
   void AddNal(const uint8_t* nal, size_t size);
+  void AddAggregate(const uint8_t* payload, size_t len);
+  void AddFragment(const uint8_t* payload, size_t len);
   void Flush();
   void Drop();
 

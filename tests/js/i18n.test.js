@@ -112,9 +112,26 @@ test('every key used in the app exists', () => {
   assert.deepStrictEqual(missing, []);
 });
 
-test('no fixed text left in the HTML', () => {
-  const html = read('app/index.html').replace(/<!--[\s\S]*?-->/g, '');
+// The HTML carries the English text (fallback and accessibility); every
+// text must come from en.json through data-i18n, so translations cover it.
+test('HTML texts are the en.json defaults of their data-i18n keys', () => {
+  const en = dictionaries().en;
+  const unescape = (s) => s.split('&quot;').join('"').split('&lt;').join('<')
+    .split('&gt;').join('>').split('&amp;').join('&');
+  // Removes comments until none is left (a removal could join a new "<!--").
+  let html = read('app/index.html');
+  for (let prev = ''; prev !== html;) {
+    prev = html;
+    html = html.replace(/<!--[\s\S]*?-->/g, '');
+  }
+  const keyed = [...html.matchAll(/<(\w+)\b[^>]*\bdata-i18n="([^"]+)"[^>]*>([^<]*)<\/\1>/g)];
+  assert.ok(keyed.length > 40, 'found the texts: ' + keyed.length);
+  for (const [, , key, text] of keyed) assert.strictEqual(unescape(text), en[key], key);
+  for (const [, text, key] of html.matchAll(/placeholder="([^"]*)" data-i18n-placeholder="([^"]+)"/g)) {
+    assert.strictEqual(unescape(text), en[key], key);
+  }
+  const keyedTexts = new Set(keyed.map((m) => m[3].trim()));
   const texts = [...html.matchAll(/>([^<>]+)</g)].map((m) => m[1].trim()).filter(Boolean);
-  const fixed = texts.filter((t) => /[A-Za-zÀ-ú]{2,}/.test(t) && t !== 'Mosaico');
+  const fixed = texts.filter((s) => /[A-Za-zÀ-ú]{2,}/.test(s) && s !== 'Mosaico' && !keyedTexts.has(s));
   assert.deepStrictEqual(fixed, []);
 });

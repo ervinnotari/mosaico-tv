@@ -3,6 +3,7 @@
 
 #include "md5.hpp"
 
+#include <array>
 #include <cstdint>
 #include <cstring>
 
@@ -10,7 +11,7 @@ namespace rtsp {
 
 namespace {
 
-const uint32_t kK[64] = {
+constexpr std::array<uint32_t, 64> kK = {
     0xd76aa478, 0xe8c7b756, 0x242070db, 0xc1bdceee, 0xf57c0faf, 0x4787c62a,
     0xa8304613, 0xfd469501, 0x698098d8, 0x8b44f7af, 0xffff5bb1, 0x895cd7be,
     0x6b901122, 0xfd987193, 0xa679438e, 0x49b40821, 0xf61e2562, 0xc040b340,
@@ -23,22 +24,25 @@ const uint32_t kK[64] = {
     0xffeff47d, 0x85845dd1, 0x6fa87e4f, 0xfe2ce6e0, 0xa3014314, 0x4e0811a1,
     0xf7537e82, 0xbd3af235, 0x2ad7d2bb, 0xeb86d391};
 
-const int kShift[64] = {7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22,
+constexpr std::array<int, 64> kShift = {7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22,
                         5, 9,  14, 20, 5, 9,  14, 20, 5, 9,  14, 20, 5, 9,  14, 20,
                         4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23,
                         6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21};
 
 uint32_t Rotl(uint32_t x, int c) { return (x << c) | (x >> (32 - c)); }
 
-void ProcessBlock(const uint8_t* block, uint32_t h[4]) {
-  uint32_t m[16];
+void ProcessBlock(const uint8_t* block, std::array<uint32_t, 4>& h) {
+  std::array<uint32_t, 16> m;
   for (int i = 0; i < 16; ++i) {
     m[i] = static_cast<uint32_t>(block[i * 4]) |
            static_cast<uint32_t>(block[i * 4 + 1]) << 8 |
            static_cast<uint32_t>(block[i * 4 + 2]) << 16 |
            static_cast<uint32_t>(block[i * 4 + 3]) << 24;
   }
-  uint32_t a = h[0], b = h[1], c = h[2], d = h[3];
+  uint32_t a = h[0];
+  uint32_t b = h[1];
+  uint32_t c = h[2];
+  uint32_t d = h[3];
   for (int i = 0; i < 64; ++i) {
     uint32_t f;
     int g;
@@ -70,7 +74,7 @@ void ProcessBlock(const uint8_t* block, uint32_t h[4]) {
 }  // namespace
 
 std::string Md5Hex(const std::string& data) {
-  uint32_t h[4] = {0x67452301, 0xefcdab89, 0x98badcfe, 0x10325476};
+  std::array<uint32_t, 4> h = {0x67452301, 0xefcdab89, 0x98badcfe, 0x10325476};
 
   std::string msg = data;
   uint64_t bit_len = static_cast<uint64_t>(data.size()) * 8;
@@ -85,9 +89,9 @@ std::string Md5Hex(const std::string& data) {
 
   static const char kHex[] = "0123456789abcdef";
   std::string out;
-  for (int i = 0; i < 4; ++i) {
+  for (uint32_t word : h) {
     for (int j = 0; j < 4; ++j) {
-      uint8_t byte = (h[i] >> (8 * j)) & 0xff;
+      uint8_t byte = (word >> (8 * j)) & 0xff;
       out.push_back(kHex[byte >> 4]);
       out.push_back(kHex[byte & 0xf]);
     }

@@ -8,6 +8,8 @@
 
 var Onvif = (function () {
   // ---- SHA-1 (only for PasswordDigest) ----
+  // "x | 0" below is 32-bit modular arithmetic (as in the SHA-1 spec), not
+  // truncation: Math.trunc would give wrong hashes.
   function sha1(bytes) {
     var h0 = 0x67452301, h1 = 0xefcdab89, h2 = 0x98badcfe, h3 = 0x10325476, h4 = 0xc3d2e1f0;
     var len = bytes.length;
@@ -26,22 +28,22 @@ var Onvif = (function () {
         w[i] = (msg[off + i * 4] << 24) | (msg[off + i * 4 + 1] << 16) |
                (msg[off + i * 4 + 2] << 8) | msg[off + i * 4 + 3];
       }
-      for (i = 16; i < 80; i++) {
-        var x = w[i - 3] ^ w[i - 8] ^ w[i - 14] ^ w[i - 16];
-        w[i] = (x << 1) | (x >>> 31);
+      for (var j = 16; j < 80; j++) {
+        var x = w[j - 3] ^ w[j - 8] ^ w[j - 14] ^ w[j - 16];
+        w[j] = (x << 1) | (x >>> 31);
       }
       var a = h0, b = h1, c = h2, d = h3, e = h4;
-      for (i = 0; i < 80; i++) {
+      for (var r = 0; r < 80; r++) {
         var f, k;
-        if (i < 20) { f = (b & c) | (~b & d); k = 0x5a827999; }
-        else if (i < 40) { f = b ^ c ^ d; k = 0x6ed9eba1; }
-        else if (i < 60) { f = (b & c) | (b & d) | (c & d); k = 0x8f1bbcdc; }
+        if (r < 20) { f = (b & c) | (~b & d); k = 0x5a827999; }
+        else if (r < 40) { f = b ^ c ^ d; k = 0x6ed9eba1; }
+        else if (r < 60) { f = (b & c) | (b & d) | (c & d); k = 0x8f1bbcdc; }
         else { f = b ^ c ^ d; k = 0xca62c1d6; }
-        var t = (((a << 5) | (a >>> 27)) + f + e + k + w[i]) | 0;
+        var t = (((a << 5) | (a >>> 27)) + f + e + k + w[r]) | 0; // NOSONAR: 32-bit wrap
         e = d; d = c; c = (b << 30) | (b >>> 2); b = a; a = t;
       }
-      h0 = (h0 + a) | 0; h1 = (h1 + b) | 0; h2 = (h2 + c) | 0;
-      h3 = (h3 + d) | 0; h4 = (h4 + e) | 0;
+      h0 = (h0 + a) | 0; h1 = (h1 + b) | 0; h2 = (h2 + c) | 0; // NOSONAR: 32-bit wrap
+      h3 = (h3 + d) | 0; h4 = (h4 + e) | 0; // NOSONAR: 32-bit wrap
     }
     var out = new Uint8Array(20);
     [h0, h1, h2, h3, h4].forEach(function (v, j) {
@@ -52,10 +54,7 @@ var Onvif = (function () {
   }
 
   function utf8(str) {
-    var s = unescape(encodeURIComponent(str));
-    var out = new Uint8Array(s.length);
-    for (var i = 0; i < s.length; i++) out[i] = s.charCodeAt(i);
-    return out;
+    return new TextEncoder().encode(str);
   }
 
   function concat(a, b, c) {
@@ -66,7 +65,7 @@ var Onvif = (function () {
 
   function base64(bytes) {
     var s = '';
-    for (var i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]);
+    bytes.forEach(function (byte) { s += String.fromCodePoint(byte); });
     return btoa(s);
   }
 
@@ -78,8 +77,8 @@ var Onvif = (function () {
   // ---- SOAP ----
   function security(user, pass, clockOffsetMs) {
     if (!user) return '';
-    var nonce = new Uint8Array(16);
-    for (var i = 0; i < 16; i++) nonce[i] = Math.floor(Math.random() * 256);
+    // The nonce protects the digest against replay: cryptographic randomness.
+    var nonce = crypto.getRandomValues(new Uint8Array(16));
     var created = new Date(Date.now() + clockOffsetMs).toISOString().replace(/\.\d+Z$/, 'Z');
     var digest = base64(sha1(concat(nonce, utf8(created), utf8(pass))));
     return '<s:Header><Security s:mustUnderstand="1" xmlns="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd">' +
@@ -130,14 +129,12 @@ var Onvif = (function () {
     var xaddrs = text(doc, 'XAddrs').split(/\s+/).filter(Boolean);
     var scopes = text(doc, 'Scopes').split(/\s+/);
     function scope(kind) {
-      for (var i = 0; i < scopes.length; i++) {
-        var m = scopes[i].match(new RegExp('^onvif://www\\.onvif\\.org/' + kind + '/(.+)$'));
-        if (m) return decodeURIComponent(m[1]).replace(/_/g, ' ');
-      }
-      return '';
+      var re = new RegExp(String.raw`^onvif://www\.onvif\.org/` + kind + '/(.+)$');
+      var m = scopes.map(function (s) { return re.exec(s); }).find(Boolean);
+      return m ? decodeURIComponent(m[1]).replace(/_/g, ' ') : '';
     }
     // Prefers the address on the same IP that answered (some devices list several).
-    var xaddr = xaddrs.filter(function (a) { return a.indexOf('//' + from) > 0; })[0] || xaddrs[0];
+    var xaddr = xaddrs.find(function (a) { return a.indexOf('//' + from) > 0; }) || xaddrs[0];
     return {
       ip: from,
       xaddr: xaddr,
@@ -150,7 +147,7 @@ var Onvif = (function () {
   // ---- Channels and RTSP URLs ----
   function withCredentials(uri, user, pass) {
     if (!user) return uri;
-    return uri.replace(/^rtsp:\/\/([^@\/]*@)?/, 'rtsp://' + encodeURIComponent(user) + ':' +
+    return uri.replace(/^rtsp:\/\/([^@/]*@)?/, 'rtsp://' + encodeURIComponent(user) + ':' +
       encodeURIComponent(pass) + '@');
   }
 
@@ -166,7 +163,7 @@ var Onvif = (function () {
           if (utc) {
             var d = Date.UTC(+text(utc, 'Year'), +text(utc, 'Month') - 1, +text(utc, 'Day'),
               +text(utc, 'Hour'), +text(utc, 'Minute'), +text(utc, 'Second'));
-            if (!isNaN(d)) auth.clockOffsetMs = d - Date.now();
+            if (!Number.isNaN(d)) auth.clockOffsetMs = d - Date.now();
           }
         }
         getMediaUrl();

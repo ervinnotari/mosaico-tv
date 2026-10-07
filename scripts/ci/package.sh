@@ -32,7 +32,8 @@ PROFILE=mosaico-release
 # headless runner, and signing fails with "Invalid password". The CLI accepts the
 # password in profiles.xml itself; it stays in the temporary folder, removed at the end.
 xml_escape() {
-  printf '%s' "$1" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g' -e 's/"/\&quot;/g'
+  value=$1
+  printf '%s' "$value" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g' -e 's/"/\&quot;/g'
 }
 cat > "$KEYS/profiles.xml" <<EOF
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>

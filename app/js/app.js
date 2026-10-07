@@ -122,7 +122,7 @@
   function ensureLayoutFits() {
     var current = Store.layout();
     if (!Capability.ready() || layoutCheck(current).ok) return;
-    var fallback = [16, 8, 4, 1].filter(function (n) { return n < current && layoutCheck(n).ok; })[0];
+    var fallback = [16, 8, 4, 1].find(function (n) { return n < current && layoutCheck(n).ok; });
     var firstVisible = Store.page() * current;
     Store.setLayout(fallback);
     Store.setPage(Math.floor(firstVisible / fallback));
@@ -131,7 +131,7 @@
 
   function refreshLayoutButtons() {
     Array.prototype.forEach.call(document.querySelectorAll('.tb-layout'), function (b) {
-      var n = +b.getAttribute('data-layout');
+      var n = +b.dataset.layout;
       b.classList.toggle('selected', n === Store.layout() && zoomed < 0);
       b.classList.toggle('unavailable', Capability.ready() && !layoutCheck(n).ok);
     });
@@ -142,7 +142,7 @@
     resetLoadGuard();
     var tiles = visibleTiles();
     var box = $('tiles');
-    var focusedIndex = Nav.current() && Nav.current().getAttribute('data-index');
+    var focusedIndex = Nav.current() && Nav.current().dataset.index;
     box.innerHTML = '';
     var wants = [];
     var video = $('video');
@@ -154,8 +154,8 @@
       d.style.top = t.rect.y + 'px';
       d.style.width = t.rect.w + 'px';
       d.style.height = t.rect.h + 'px';
-      d.setAttribute('data-slot', slot);
-      d.setAttribute('data-index', t.index);
+      d.dataset.slot = slot;
+      d.dataset.index = t.index;
       if (t.cam) {
         d.appendChild(el('div', 'tile-name', t.cam.name));
         d.appendChild(el('div', 'tile-status', ''));
@@ -220,7 +220,7 @@
   }
 
   function onTileOk(tile) {
-    var index = +tile.getAttribute('data-index');
+    var index = +tile.dataset.index;
     var cam = Store.cameras()[index];
     if (!cam) { openForm(null); return; }
     if (zoomed >= 0 || Store.layout() === 1) return;
@@ -231,7 +231,7 @@
   Player.onStatus = function (slot, status, text) {
     var tile = document.querySelector('.tile[data-slot="' + slot + '"]');
     if (!tile) return;
-    tile.setAttribute('data-status', status);
+    tile.dataset.status = status;
     var st = tile.querySelector('.tile-status');
     if (st) st.textContent = status === 'live' ? '' : text;
   };
@@ -242,16 +242,17 @@
   $('empty-search').onclick = function () { openSearch(); };
   $('empty-manual').onclick = function () { openForm(null); };
   Array.prototype.forEach.call(document.querySelectorAll('.tb-layout'), function (b) {
-    b.onclick = function () { setLayout(+b.getAttribute('data-layout')); };
+    b.onclick = function () { setLayout(+b.dataset.layout); };
   });
 
   // The toolbar shows up when the focus enters it.
   Nav.onFocus = function (focused) {
     var inToolbar = !!focused.closest('#toolbar');
     $('toolbar').classList.toggle('show', inToolbar || Store.cameras().length === 0);
-    $('tb-info').textContent = focused.classList.contains('unavailable')
-      ? unavailableReason(+focused.getAttribute('data-layout'))
-      : focused.id === 'tb-cameras' ? I18n.t('toolbar.settings_info') : '';
+    var info = '';
+    if (focused.classList.contains('unavailable')) info = unavailableReason(+focused.dataset.layout);
+    else if (focused.id === 'tb-cameras') info = I18n.t('toolbar.settings_info');
+    $('tb-info').textContent = info;
   };
 
   // Keeps the real substream resolution of each camera (the layout cost
@@ -267,9 +268,9 @@
   }
 
   Player.onStats = function (slot, s) {
-    if (s.mode !== 'software' || !(s.width > 0)) return;
+    if (s.mode !== 'software' || !s.width || s.width <= 0) return;
     var tile = document.querySelector('.tile[data-slot="' + slot + '"]');
-    var cam = tile && Store.cameras()[+tile.getAttribute('data-index')];
+    var cam = tile && Store.cameras()[+tile.dataset.index];
     if (!cam) return;
 
     var fps = Math.round(Math.min(30, s.fps));
@@ -383,7 +384,7 @@
 
   function showAboutDoc(name) {
     Array.prototype.forEach.call(document.querySelectorAll('.about-tab'), function (b) {
-      b.classList.toggle('selected', b.getAttribute('data-doc') === name);
+      b.classList.toggle('selected', b.dataset.doc === name);
     });
     var box = $('about-doc');
     box.scrollTop = 0;
@@ -395,8 +396,9 @@
     parts.forEach(function (part, i) {
       fetchText(part.file, function (text) {
         // Markdown.render and Markdown.escape escape all the text.
-        html[i] = !text ? '' : part.md ? Markdown.render(text)
-          : '<pre class="md-code">' + Markdown.escape(text) + '</pre>';
+        if (!text) html[i] = '';
+        else if (part.md) html[i] = Markdown.render(text);
+        else html[i] = '<pre class="md-code">' + Markdown.escape(text) + '</pre>';
         if (--pending === 0) {
           aboutCache[name] = html.join('<hr>') || '<p>' + Markdown.escape(I18n.t('about.not_found')) + '</p>';
           box.innerHTML = aboutCache[name];
@@ -414,7 +416,7 @@
   }
 
   Array.prototype.forEach.call(document.querySelectorAll('.about-tab'), function (b) {
-    b.onclick = function () { showAboutDoc(b.getAttribute('data-doc')); };
+    b.onclick = function () { showAboutDoc(b.dataset.doc); };
   });
   $('cam-about').onclick = openAbout;
   $('about-back').onclick = function () { openCameras(); };
@@ -473,14 +475,14 @@
     // Camera from ONVIF: edit the URLs directly.
     if (cam && !cam.form) {
       brandIndex = Store.BRANDS.length - 1;
-      var m = cam.main.match(/^rtsp:\/\/(?:([^:@\/]*)(?::([^@\/]*))?@)?([^:\/]+)(?::(\d+))?(\/.*)?$/);
+      var m = cam.main.match(/^rtsp:\/\/(?:([^:@/]*)(?::([^@/]*))?@)?([^:/]+)(?::(\d+))?(\/.*)?$/);
       if (m) {
         $('f-user').value = decodeURIComponent(m[1] || '');
         $('f-pass').value = decodeURIComponent(m[2] || '');
         $('f-host').value = m[3];
         $('f-port').value = m[4] || '554';
         $('f-main').value = m[5] || '/';
-        var s = cam.sub && cam.sub.match(/^rtsp:\/\/[^\/]+(\/.*)?$/);
+        var s = cam.sub && cam.sub.match(/^rtsp:\/\/[^/]+(\/.*)?$/);
         $('f-sub').value = s && cam.sub !== cam.main ? (s[1] || '') : '';
       }
     }
@@ -685,49 +687,66 @@
   $('exit-confirm').onclick = exitApp;
   $('exit-cancel').onclick = closeExitDialog;
 
+  var K = Nav.KEY;
+
+  function isBack(k) { return k === K.BACK || k === K.ESC; }
+
+  // Exit box open: Back closes it; only arrows and OK work inside it (CH▲▼
+  // and the like are blocked).
+  function onExitDialogKey(k) {
+    if (isBack(k)) { closeExitDialog(); return true; }
+    return ![K.LEFT, K.RIGHT, K.UP, K.DOWN, K.ENTER].includes(k);
+  }
+
+  // Back on the mosaic: from the toolbar to the tiles, from full screen to
+  // the mosaic, otherwise the exit box.
+  function onMosaicBack(current) {
+    if (current && current.closest('#toolbar') && Store.cameras().length) {
+      Nav.focus(document.querySelector('.tile'));
+    } else if (zoomed >= 0) {
+      var from = zoomed;
+      zoomed = -1;
+      renderMosaic(true);
+      var t = document.querySelector('.tile[data-index="' + from + '"]');
+      if (t) Nav.focus(t);
+    } else {
+      openExitDialog();
+    }
+    return true;
+  }
+
+  function onMosaicKey(k, current) {
+    if (exitDialogOpen()) return onExitDialogKey(k);
+    if (k === K.CH_UP || k === K.CH_DOWN) { changePage(k === K.CH_UP ? 1 : -1); return true; }
+    var onTile = current && current.classList.contains('tile');
+    var single = zoomed >= 0 || Store.layout() === 1;
+    if (single && onTile && (k === K.LEFT || k === K.RIGHT)) {
+      changePage(k === K.LEFT ? -1 : 1);
+      return true;
+    }
+    return isBack(k) ? onMosaicBack(current) : false;
+  }
+
+  // Back outside the mosaic: closes the open dialog or goes one screen back.
+  function onScreenBack() {
+    if (screen === 'about') openCameras();
+    else if (screen === 'form') $('f-cancel').click();
+    else if (screen !== 'search') backToMosaic();
+    else if ($('s-login').classList.contains('show')) closeDialog('s-login');
+    else if ($('s-channels').classList.contains('show')) closeDialog('s-channels');
+    else $('s-back').click();
+    return true;
+  }
+
   Nav.onKey = function (k, current) {
-    var K = Nav.KEY;
-    var back = k === K.BACK || k === K.ESC;
-
-    if (screen === 'mosaic' && exitDialogOpen()) {
-      if (back) { closeExitDialog(); return true; }
-      // Only arrows and OK inside the box; CH▲▼ and the like are blocked.
-      return [K.LEFT, K.RIGHT, K.UP, K.DOWN, K.ENTER].indexOf(k) < 0;
-    }
-
-    if (screen === 'mosaic') {
-      var onTile = current && current.classList.contains('tile');
-      var single = zoomed >= 0 || Store.layout() === 1;
-      if (k === K.CH_UP) { changePage(1); return true; }
-      if (k === K.CH_DOWN) { changePage(-1); return true; }
-      if (single && onTile && (k === K.LEFT || k === K.RIGHT)) {
-        changePage(k === K.LEFT ? -1 : 1);
-        return true;
-      }
-      if (back) {
-        if (current && current.closest('#toolbar') && Store.cameras().length) {
-          Nav.focus(document.querySelector('.tile'));
-        } else if (zoomed >= 0) {
-          var from = zoomed;
-          zoomed = -1;
-          renderMosaic(true);
-          var t = document.querySelector('.tile[data-index="' + from + '"]');
-          if (t) Nav.focus(t);
-        } else {
-          openExitDialog();
-        }
-        return true;
-      }
-      return false;
-    }
-
-    if (screen === 'form' && current === $('f-brand') && (k === K.LEFT || k === K.RIGHT)) {
+    if (screen === 'mosaic') return onMosaicKey(k, current);
+    var horizontal = k === K.LEFT || k === K.RIGHT;
+    if (screen === 'form' && current === $('f-brand') && horizontal) {
       var n = Store.BRANDS.length;
       brandIndex = (brandIndex + (k === K.LEFT ? n - 1 : 1)) % n;
       refreshForm();
       return true;
     }
-
     // License text: ▲▼ scroll; at the top, ▲ goes back to the buttons.
     if (screen === 'about' && current === $('about-doc') && (k === K.UP || k === K.DOWN)) {
       var box = $('about-doc');
@@ -735,24 +754,7 @@
       box.scrollTop += k === K.DOWN ? 320 : -320;
       return true;
     }
-
-    if (back) {
-      if (screen === 'about') {
-        openCameras();
-        return true;
-      }
-      if (screen === 'search') {
-        if ($('s-login').classList.contains('show')) closeDialog('s-login');
-        else if ($('s-channels').classList.contains('show')) closeDialog('s-channels');
-        else $('s-back').click();
-      } else if (screen === 'form') {
-        $('f-cancel').click();
-      } else {
-        backToMosaic();
-      }
-      return true;
-    }
-    return false;
+    return isBack(k) ? onScreenBack() : false;
   };
 
   // ---------------------------------------------------------------- start

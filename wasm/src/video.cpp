@@ -19,7 +19,7 @@ bool ParseRtp(const uint8_t* p, size_t size, RtpPacket* out) {
   size_t off = 12 + csrc_count * 4;
   if (extension) {
     if (off + 4 > size) return false;
-    size_t ext_words = static_cast<size_t>(p[off + 2] << 8 | p[off + 3]);
+    auto ext_words = static_cast<size_t>(p[off + 2] << 8 | p[off + 3]);
     off += 4 + ext_words * 4;
   }
   size_t end = size;

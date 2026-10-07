@@ -44,24 +44,31 @@ var Nav = (function () {
     if (Nav.onFocus) Nav.onFocus(el);
   }
 
+  // Distance from rectangle a to b moving in dir: {main, cross}, or null
+  // when b is not in that direction.
+  function distance(dir, a, b) {
+    var dx = Math.abs((b.left + b.width / 2) - (a.left + a.width / 2));
+    var dy = Math.abs((b.top + b.height / 2) - (a.top + a.height / 2));
+    switch (dir) {
+      case 'left': return b.right > a.left + 1 ? null : { main: a.left - b.right, cross: dy };
+      case 'right': return b.left < a.right - 1 ? null : { main: b.left - a.right, cross: dy };
+      case 'up': return b.bottom > a.top + 1 ? null : { main: a.top - b.bottom, cross: dx };
+      default: return b.top < a.bottom - 1 ? null : { main: b.top - a.bottom, cross: dx };
+    }
+  }
+
   // Next element in the direction: favors the axis of movement and penalizes
   // misalignment on the other axis.
   function move(dir) {
     var list = candidates();
-    if (!current || list.indexOf(current) < 0) { focus(list[0]); return true; }
+    if (!current || !list.includes(current)) { focus(list[0]); return true; }
     var a = current.getBoundingClientRect();
-    var ax = a.left + a.width / 2, ay = a.top + a.height / 2;
     var best = null, bestScore = Infinity;
     list.forEach(function (el) {
       if (el === current) return;
-      var b = el.getBoundingClientRect();
-      var bx = b.left + b.width / 2, by = b.top + b.height / 2;
-      var main, cross;
-      if (dir === 'left') { if (b.right > a.left + 1) return; main = a.left - b.right; cross = Math.abs(by - ay); }
-      else if (dir === 'right') { if (b.left < a.right - 1) return; main = b.left - a.right; cross = Math.abs(by - ay); }
-      else if (dir === 'up') { if (b.bottom > a.top + 1) return; main = a.top - b.bottom; cross = Math.abs(bx - ax); }
-      else { if (b.top < a.bottom - 1) return; main = b.top - a.bottom; cross = Math.abs(bx - ax); }
-      var score = main + cross * 2;
+      var d = distance(dir, a, el.getBoundingClientRect());
+      if (!d) return;
+      var score = d.main + d.cross * 2;
       if (score < bestScore) { bestScore = score; best = el; }
     });
     // Entering a row of actions (.actions) from above/below starts at the
@@ -69,7 +76,7 @@ var Nav = (function () {
     if (best && (dir === 'up' || dir === 'down')) {
       var group = best.closest('.actions');
       if (group && !group.contains(current)) {
-        var firstInGroup = list.filter(function (el) { return group.contains(el); })[0];
+        var firstInGroup = list.find(function (el) { return group.contains(el); });
         if (firstInGroup) best = firstInGroup;
       }
     }
@@ -78,7 +85,7 @@ var Nav = (function () {
   }
 
   function startEditing(field) {
-    var input = document.getElementById(field.getAttribute('data-input'));
+    var input = document.getElementById(field.dataset.input);
     if (!input) return;
     editing = input;
     field.classList.add('editing');
@@ -96,37 +103,43 @@ var Nav = (function () {
     if (Nav.onEdited) Nav.onEdited(field);
   }
 
+  var ARROWS = {};
+  ARROWS[KEY.LEFT] = 'left';
+  ARROWS[KEY.RIGHT] = 'right';
+  ARROWS[KEY.UP] = 'up';
+  ARROWS[KEY.DOWN] = 'down';
+  var LEAVE_EDITING = [KEY.IME_DONE, KEY.IME_CANCEL, KEY.ENTER, KEY.BACK, KEY.ESC, KEY.UP, KEY.DOWN];
+
+  function isEditable(el) {
+    return el.classList.contains('field') && !!el.dataset.input;
+  }
+
+  // With the TV keyboard open, only keys that close it are handled; the
+  // left/right arrows move the cursor in the text.
+  function onEditingKey(k, ev) {
+    if (!LEAVE_EDITING.includes(k)) return;
+    stopEditing();
+    ev.preventDefault();
+    if (k === KEY.UP || k === KEY.DOWN) move(ARROWS[k]);
+  }
+
+  function onNavigationKey(k, ev) {
+    if (ARROWS[k]) {
+      move(ARROWS[k]);
+      ev.preventDefault();
+    } else if (k === KEY.ENTER && current) {
+      ev.preventDefault();
+      if (isEditable(current)) startEditing(current);
+      else current.click();
+    }
+  }
+
   document.addEventListener('keydown', function (ev) {
-    var k = ev.keyCode;
-
-    if (editing) {
-      if (k === KEY.IME_DONE || k === KEY.IME_CANCEL || k === KEY.ENTER ||
-          k === KEY.BACK || k === KEY.ESC || k === KEY.UP || k === KEY.DOWN) {
-        stopEditing();
-        ev.preventDefault();
-        if (k === KEY.UP) move('up');
-        if (k === KEY.DOWN) move('down');
-      }
-      return;  // left/right arrows move the cursor in the text
-    }
-
+    // The TV remote keys (Back 10009, CH±, IME) exist only as key codes.
+    var k = ev.keyCode; // NOSONAR
+    if (editing) { onEditingKey(k, ev); return; }
     if (Nav.onKey && Nav.onKey(k, current) === true) { ev.preventDefault(); return; }
-
-    switch (k) {
-      case KEY.LEFT: move('left'); ev.preventDefault(); break;
-      case KEY.RIGHT: move('right'); ev.preventDefault(); break;
-      case KEY.UP: move('up'); ev.preventDefault(); break;
-      case KEY.DOWN: move('down'); ev.preventDefault(); break;
-      case KEY.ENTER:
-        if (!current) break;
-        ev.preventDefault();
-        if (current.classList.contains('field') && current.getAttribute('data-input')) {
-          startEditing(current);
-        } else {
-          current.click();
-        }
-        break;
-    }
+    onNavigationKey(k, ev);
   });
 
   // A click from the remote's pointer (Smart Remote) also focuses.
@@ -136,7 +149,7 @@ var Nav = (function () {
     var el = ev.target.closest && ev.target.closest('.focusable');
     if (!el || !root.contains(el) || !visible(el)) return;
     if (el !== current) focus(el);
-    if (el.classList.contains('field') && el.getAttribute('data-input') && !editing) startEditing(el);
+    if (isEditable(el) && !editing) startEditing(el);
   });
 
   return {

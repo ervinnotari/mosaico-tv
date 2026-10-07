@@ -38,22 +38,22 @@
     </div>
 
     <div id="empty" class="empty">
-      <h1 data-i18n="empty.title"></h1>
-      <p data-i18n="empty.text"></p>
+      <h1 data-i18n="empty.title">No cameras yet</h1>
+      <p data-i18n="empty.text">Find cameras and DVRs on the network automatically or add one by its RTSP address.</p>
       <div class="actions">
-        <button class="focusable primary" id="empty-search" data-i18n="empty.search"></button>
-        <button class="focusable" id="empty-manual" data-i18n="common.manual"></button>
+        <button class="focusable primary" id="empty-search" data-i18n="empty.search">Search the network</button>
+        <button class="focusable" id="empty-manual" data-i18n="common.manual">Add manually</button>
       </div>
     </div>
 
-    <div id="hint" class="hint" data-i18n="hint"></div>
+    <div id="hint" class="hint" data-i18n="hint">▲ menu  ·  OK opens full screen  ·  CH▲▼ changes the page</div>
 
     <div id="exit-dialog" class="dialog compact-dialog">
-      <h2 data-i18n="exit.title"></h2>
-      <p class="note" data-i18n="exit.note"></p>
+      <h2 data-i18n="exit.title">Exit the app?</h2>
+      <p class="note" data-i18n="exit.note">The cameras will stop playing.</p>
       <div class="actions">
-        <button class="focusable" id="exit-confirm" data-i18n="exit.confirm"></button>
-        <button class="focusable primary" id="exit-cancel" data-i18n="common.cancel"></button>
+        <button class="focusable" id="exit-confirm" data-i18n="exit.confirm">Exit</button>
+        <button class="focusable primary" id="exit-cancel" data-i18n="common.cancel">Cancel</button>
       </div>
     </div>
   </section>
@@ -61,43 +61,43 @@
   <!-- ===================== Camera list ===================== -->
   <section id="screen-cameras" class="screen panel-screen">
     <header>
-      <h1 data-i18n="cameras.title"></h1>
+      <h1 data-i18n="cameras.title">Cameras</h1>
       <div class="actions">
-        <button class="focusable primary" id="cam-search" data-i18n="cameras.search"></button>
-        <button class="focusable" id="cam-manual" data-i18n="common.manual"></button>
-        <button class="focusable" id="cam-about" data-i18n="cameras.about"></button>
-        <button class="focusable" id="cam-back" data-i18n="common.back"></button>
+        <button class="focusable primary" id="cam-search" data-i18n="cameras.search">Search the network (ONVIF)</button>
+        <button class="focusable" id="cam-manual" data-i18n="common.manual">Add manually</button>
+        <button class="focusable" id="cam-about" data-i18n="cameras.about">About</button>
+        <button class="focusable" id="cam-back" data-i18n="common.back">Back</button>
       </div>
     </header>
-    <div class="perf"><span id="cam-perf"></span><button class="focusable" id="cam-remeasure" data-i18n="cameras.remeasure"></button></div>
-    <p class="note" data-i18n="cameras.order_note"></p>
+    <div class="perf"><span id="cam-perf"></span><button class="focusable" id="cam-remeasure" data-i18n="cameras.remeasure">Measure again</button></div>
+    <p class="note" data-i18n="cameras.order_note">The order of the list is the order of the cameras in the mosaic.</p>
     <div id="cam-list" class="list"></div>
   </section>
 
   <!-- ===================== Manual setup ===================== -->
   <section id="screen-form" class="screen panel-screen">
     <header>
-      <h1 id="form-title"></h1>
+      <h1 id="form-title" data-i18n="form.new">New camera</h1>
     </header>
     <div class="form">
-      <div class="field focusable" data-input="f-name"><label data-i18n="form.name"></label><input id="f-name" type="text" data-i18n-placeholder="form.name_ph"></div>
-      <div class="field focusable choice" id="f-brand"><label data-i18n="form.brand"></label><span class="value"></span><span class="arrows">◀ ▶</span></div>
+      <div class="field focusable" data-input="f-name"><label for="f-name" data-i18n="form.name">Name</label><input id="f-name" type="text" placeholder="E.g.: Garage" data-i18n-placeholder="form.name_ph"></div>
+      <div class="field focusable choice" id="f-brand"><span class="field-label" data-i18n="form.brand">Model</span><span class="value"></span><span class="arrows">◀ ▶</span></div>
       <div class="row">
-        <div class="field focusable" data-input="f-host"><label data-i18n="form.host"></label><input id="f-host" type="text" data-i18n-placeholder="form.host_ph"></div>
-        <div class="field focusable small" data-input="f-port"><label data-i18n="form.port"></label><input id="f-port" type="text" value="554"></div>
-        <div class="field focusable small brand-only" data-input="f-channel"><label data-i18n="form.channel"></label><input id="f-channel" type="text" value="1"></div>
+        <div class="field focusable" data-input="f-host"><label for="f-host" data-i18n="form.host">IP or address</label><input id="f-host" type="text" placeholder="192.168.1.10 or camera.example.com" data-i18n-placeholder="form.host_ph"></div>
+        <div class="field focusable small" data-input="f-port"><label for="f-port" data-i18n="form.port">RTSP port</label><input id="f-port" type="text" value="554"></div>
+        <div class="field focusable small brand-only" data-input="f-channel"><label for="f-channel" data-i18n="form.channel">Channel</label><input id="f-channel" type="text" value="1"></div>
       </div>
       <div class="row">
-        <div class="field focusable" data-input="f-user"><label data-i18n="common.user"></label><input id="f-user" type="text" value="admin"></div>
-        <div class="field focusable" data-input="f-pass"><label data-i18n="common.password"></label><input id="f-pass" type="password"></div>
+        <div class="field focusable" data-input="f-user"><label for="f-user" data-i18n="common.user">User</label><input id="f-user" type="text" value="admin"></div>
+        <div class="field focusable" data-input="f-pass"><label for="f-pass" data-i18n="common.password">Password</label><input id="f-pass" type="password"></div>
       </div>
-      <div class="field focusable custom-only" data-input="f-main"><label data-i18n="form.main"></label><input id="f-main" type="text" placeholder="/stream1"></div>
-      <div class="field focusable custom-only" data-input="f-sub"><label data-i18n="form.sub"></label><input id="f-sub" type="text" placeholder="/stream2"></div>
+      <div class="field focusable custom-only" data-input="f-main"><label for="f-main" data-i18n="form.main">Main stream path</label><input id="f-main" type="text" placeholder="/stream1"></div>
+      <div class="field focusable custom-only" data-input="f-sub"><label for="f-sub" data-i18n="form.sub">Substream path (mosaic, optional)</label><input id="f-sub" type="text" placeholder="/stream2"></div>
       <p class="preview" id="f-preview"></p>
       <p class="error" id="f-error"></p>
       <div class="actions">
-        <button class="focusable primary" id="f-save" data-i18n="common.save"></button>
-        <button class="focusable" id="f-cancel" data-i18n="common.cancel"></button>
+        <button class="focusable primary" id="f-save" data-i18n="common.save">Save</button>
+        <button class="focusable" id="f-cancel" data-i18n="common.cancel">Cancel</button>
       </div>
     </div>
   </section>
@@ -105,57 +105,57 @@
   <!-- ===================== About and licenses ===================== -->
   <section id="screen-about" class="screen panel-screen">
     <header>
-      <h1><span data-i18n="about.title"></span> <span class="about-version" id="about-version"></span></h1>
+      <h1><span data-i18n="about.title">About</span> <span class="about-version" id="about-version"></span></h1>
       <div class="actions">
-        <button class="focusable" id="about-back" data-i18n="common.back"></button>
+        <button class="focusable" id="about-back" data-i18n="common.back">Back</button>
       </div>
     </header>
     <!-- Documents copied to app/licenses/ by scripts/package.bat. -->
     <div class="about-tabs actions">
-      <button class="focusable about-tab" data-doc="credits" data-i18n="about.credits"></button>
-      <button class="focusable about-tab" data-doc="third" data-i18n="about.third"></button>
-      <button class="focusable about-tab" data-doc="license" data-i18n="about.license"></button>
-      <span class="note about-hint" data-i18n="about.hint"></span>
+      <button class="focusable about-tab" data-doc="credits" data-i18n="about.credits">Credits</button>
+      <button class="focusable about-tab" data-doc="third" data-i18n="about.third">Third-party licenses</button>
+      <button class="focusable about-tab" data-doc="license" data-i18n="about.license">Project license</button>
+      <span class="note about-hint" data-i18n="about.hint">▼ enters the text · ▲▼ scroll</span>
     </div>
-    <div id="about-doc" class="md focusable" tabindex="0"></div>
+    <div id="about-doc" class="md focusable"></div>
   </section>
 
   <!-- ===================== ONVIF search ===================== -->
   <section id="screen-search" class="screen panel-screen">
     <header>
-      <h1 data-i18n="search.title"></h1>
+      <h1 data-i18n="search.title">Search the network</h1>
       <div class="actions">
-        <button class="focusable" id="s-again" data-i18n="search.again"></button>
-        <button class="focusable" id="s-back" data-i18n="common.back"></button>
+        <button class="focusable" id="s-again" data-i18n="search.again">Search again</button>
+        <button class="focusable" id="s-back" data-i18n="common.back">Back</button>
       </div>
     </header>
     <p class="note" id="s-status"></p>
     <div id="s-list" class="list"></div>
 
     <div id="s-login" class="dialog">
-      <h2 id="s-login-title"></h2>
+      <h2 id="s-login-title" data-i18n="common.connect">Connect</h2>
       <div class="row">
-        <div class="field focusable" data-input="s-user"><label data-i18n="common.user"></label><input id="s-user" type="text" value="admin"></div>
-        <div class="field focusable" data-input="s-pass"><label data-i18n="common.password"></label><input id="s-pass" type="password"></div>
+        <div class="field focusable" data-input="s-user"><label for="s-user" data-i18n="common.user">User</label><input id="s-user" type="text" value="admin"></div>
+        <div class="field focusable" data-input="s-pass"><label for="s-pass" data-i18n="common.password">Password</label><input id="s-pass" type="password"></div>
       </div>
       <p class="error" id="s-login-error"></p>
       <div class="actions">
-        <button class="focusable primary" id="s-connect" data-i18n="common.connect"></button>
-        <button class="focusable" id="s-login-cancel" data-i18n="common.cancel"></button>
+        <button class="focusable primary" id="s-connect" data-i18n="common.connect">Connect</button>
+        <button class="focusable" id="s-login-cancel" data-i18n="common.cancel">Cancel</button>
       </div>
     </div>
 
     <div id="s-channels" class="dialog">
-      <h2 id="s-channels-title"></h2>
+      <h2 id="s-channels-title" data-i18n="common.add">Add</h2>
       <div id="s-channel-list" class="list compact"></div>
       <div class="actions">
-        <button class="focusable primary" id="s-add" data-i18n="common.add"></button>
-        <button class="focusable" id="s-channels-cancel" data-i18n="common.cancel"></button>
+        <button class="focusable primary" id="s-add" data-i18n="common.add">Add</button>
+        <button class="focusable" id="s-channels-cancel" data-i18n="common.cancel">Cancel</button>
       </div>
     </div>
   </section>
 
-  <div id="analyzing"><div class="box"><h2 data-i18n="analyzing.title"></h2><p data-i18n="analyzing.text"></p></div></div>
+  <div id="analyzing"><div class="box"><h2 data-i18n="analyzing.title">Analyzing the performance of this TV</h2><p data-i18n="analyzing.text">It takes about 6 seconds and only happens the first time.</p></div></div>
   <div id="toast"></div>
 
   <script src="js/i18n.js"></script>

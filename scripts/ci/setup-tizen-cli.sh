@@ -21,7 +21,7 @@ TIZEN="$DEST/tools/ide/bin/tizen"
 if [ ! -x "$TIZEN" ]; then
   INSTALLER=$(mktemp)
   echo "[setup-tizen-cli] downloading Tizen Studio $VERSION (web-cli)" >&2
-  curl -fsSL -o "$INSTALLER" "$URL"
+  curl -fsSL --proto "=https" --proto-redir "=https" -o "$INSTALLER" "$URL"
   chmod +x "$INSTALLER"
   # The installer is a bash script and exits successfully even when it refuses
   # the destination: hence the check right below.
