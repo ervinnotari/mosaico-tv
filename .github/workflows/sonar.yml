@@ -30,12 +30,12 @@ jobs:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
       BUILD_WRAPPER_OUT_DIR: build/build-wrapper
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           # Full history: Sonar uses it for blame and new-code detection.
           fetch-depth: 0
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
 

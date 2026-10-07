@@ -23,7 +23,7 @@ jobs:
     runs-on: ubuntu-24.04
     environment: release
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           # OpenH264 (wasm/third_party/openh264) is a git submodule.
           submodules: true
@@ -39,7 +39,7 @@ jobs:
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
 
@@ -51,14 +51,14 @@ jobs:
 
       # Emscripten 1.39 (2019) needs distutils (removed in Python 3.12) and
       # its clang needs libxml2.
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
       - name: Install libxml2
         run: sudo apt-get update -qq && sudo apt-get install -y -qq libxml2
 
       - name: Cache Samsung Emscripten SDK
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/samsung-emsdk
           key: samsung-emsdk-1.39.4.7-linux64
@@ -72,13 +72,13 @@ jobs:
         env:
           SAMSUNG_EMSDK: ${{ steps.emsdk.outputs.path }}
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: 17
 
       - name: Cache Tizen CLI
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/tizen-studio
           key: tizen-cli-6.1-linux
