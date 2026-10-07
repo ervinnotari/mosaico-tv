@@ -8,6 +8,7 @@
 #include <netinet/in.h>
 #include <poll.h>
 #include <sys/socket.h>
+#include <sys/time.h>
 #include <unistd.h>
 
 #include <cerrno>
@@ -56,10 +57,36 @@ bool Connection::Connect(app::Error* err) {
   sa.sin_family = AF_INET;
   sa.sin_port = htons(url_.port);
   sa.sin_addr = addr;
-  if (connect(fd_, reinterpret_cast<sockaddr*>(&sa), sizeof(sa)) != 0) {
-    *err = {"connect_failed", std::strerror(errno)};
-    return false;
+  return ConnectWithTimeout(sa, err);
+}
+
+// Connect in short steps: a camera that does not answer (powered off, or a
+// firewall that drops the packets) would otherwise hold the thread for the
+// whole TCP timeout, and the slot could not be stopped meanwhile. Tizen
+// Sockets do not allow O_NONBLOCK (fcntl aborts the module), so each connect()
+// call is limited with SO_SNDTIMEO and repeated while the stop flag is clear.
+bool Connection::ConnectWithTimeout(const sockaddr_in& sa, app::Error* err) {
+  timeval step{0, kConnectStepMs * 1000};
+  setsockopt(fd_, SOL_SOCKET, SO_SNDTIMEO, &step, sizeof(step));
+  const auto deadline = Clock::now() + std::chrono::milliseconds(kConnectTimeoutMs);
+  for (;;) {
+    if (connect(fd_, reinterpret_cast<const sockaddr*>(&sa), sizeof(sa)) == 0 || errno == EISCONN) break;
+    const int e = errno;
+    if (e != EINPROGRESS && e != EALREADY && e != EAGAIN && e != ETIMEDOUT && e != EINTR) {
+      *err = {"connect_failed", std::strerror(e)};
+      return false;
+    }
+    if (stop_) {
+      *err = {"interrupted", ""};
+      return false;
+    }
+    if (Clock::now() > deadline) {
+      *err = {"timeout", ""};
+      return false;
+    }
   }
+  timeval none{0, 0};  // the session uses poll() for its own timeouts
+  setsockopt(fd_, SOL_SOCKET, SO_SNDTIMEO, &none, sizeof(none));
   return true;
 }
 
