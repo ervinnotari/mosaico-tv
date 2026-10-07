@@ -47,8 +47,8 @@ Tested TVs (end-to-end test, `scripts\test-tv.bat`):
 
 | TV | Benchmark | Layouts with DVR substreams (352×240 @ 25 fps) | Notes |
 |---|---|---|---|
-| The Frame 2021, QN55LS03A | 53–68 Mpx/s | 1, 4, 8; 16 with up to 12 cameras | Reference TV |
-| Crystal UHD 2021, UN50AU7700 | 20–27 Mpx/s | 1 (4 at the limit, depending on the measurement) | Full screen (TV decoder, H.264 and H.265) works fully; the mosaic needs a faster TV. The TV restarts the app when it comes back from the background; it reconnects by itself |
+| The Frame 2021, QN55LS03A | 53–68 Mpx/s | 1, 4, 8; 16 with up to 16 cameras when the TV measures ~68 | Reference TV |
+| Crystal UHD 2021, UN50AU7700 | 20–27 Mpx/s | 1, 4 (4 DVR substreams live at ~80% load) | Larger mosaics only with economy mode. The TV restarts the app when it comes back from the background; it reconnects by itself |
 
 The software mosaic depends on the TV processor, so the app measures it on
 first launch and only enables the layouts that fit.
