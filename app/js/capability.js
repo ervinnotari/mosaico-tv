@@ -159,7 +159,10 @@ var Capability = (function () {
           holdUntil[s] = tick + hold[s];
           return { load: load, changes: [{ slot: s, economy: true }] };
         }
-        economy = economy.filter(function (t) { return !(tick < holdUntil[t.slot]); });
+        // Tiles still on hold stay in economy (no hold recorded: free to return).
+        economy = economy.filter(function (t) {
+          return holdUntil[t.slot] === undefined || tick >= holdUntil[t.slot];
+        });
         if (low >= LOW_TICKS && economy.length) {
           // The focused tile first, then the lowest slot.
           var sorted = economy.slice().sort(function (a, b) {
