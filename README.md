@@ -40,8 +40,18 @@ against a 4-channel Hikvision DVR.
 |---|---|---|
 | up to 2019 | ≤ 5.0 | Not supported (no WebAssembly) |
 | 2020 | 5.5 | Probably works (`config.xml` currently requires 6.0; untested) |
-| 2021 | 6.0 | Tested |
+| 2021 | 6.0 | Tested (see below) |
 | 2022–2026 | 6.5–10.0 | Same APIs; not tested yet |
+
+Tested TVs (end-to-end test, `scripts\test-tv.bat`):
+
+| TV | Benchmark | Layouts with DVR substreams (352×240 @ 25 fps) | Notes |
+|---|---|---|---|
+| The Frame 2021, QN55LS03A | 53–68 Mpx/s | 1, 4, 8; 16 with up to 12 cameras | Reference TV |
+| Crystal UHD 2021, UN50AU7700 | 20–27 Mpx/s | 1 (4 at the limit, depending on the measurement) | Full screen (TV decoder, H.264 and H.265) works fully; the mosaic needs a faster TV. The TV restarts the app when it comes back from the background; it reconnects by itself |
+
+The software mosaic depends on the TV processor, so the app measures it on
+first launch and only enables the layouts that fit.
 
 ### How it works
 
@@ -113,7 +123,7 @@ Requirements (Windows):
 
 - Samsung Emscripten SDK (fastcomp 1.39.4.7), Tizen CLI and `sdb` (the Tizen
   extension for Visual Studio installs them); paths are in `scripts\env.bat`.
-- A Samsung TV certificate profile named `rtsp-poc` (Tizen Certificate
+- A Samsung TV certificate profile named `mosaico-tv` (Tizen Certificate
   Manager, with your TV's DUID). Keep `author.p12` and its password: store
   updates must be signed with the same author certificate.
 - Node 22+ for tests and tools; ffmpeg for test media.
@@ -121,7 +131,7 @@ Requirements (Windows):
 ```
 scripts\build-openh264.bat   builds OpenH264 once (build\openh264\libopenh264dec.a)
 scripts\build-wasm.bat       builds the player into app\wasm\
-scripts\package.bat          signs with the "rtsp-poc" profile → out\Mosaico.wgt
+scripts\package.bat          signs with the "mosaico-tv" profile → out\Mosaico.wgt
 scripts\install.bat <ip>     installs and launches on the TV (Developer Mode)
 scripts\duid.bat <ip>        prints the TV DUID (needed for the certificate)
 ```
